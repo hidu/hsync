@@ -2,16 +2,16 @@ package main
 
 import (
 	"flag"
-	//	"github.com/hidu/hsync/hsync"
-	"./hsync"
+	"github.com/hidu/hsync/hsync"
+	//	"./hsync"
 	"github.com/golang/glog"
 	"os"
 	"path/filepath"
 )
 
-var addr = flag.String("addr", ":1234", "")
-var root = flag.String("root", "./data/", "")
-var d = flag.Bool("d", false, "")
+var addr = flag.String("addr", ":8500", "")
+var home = flag.String("home", "./data/", "")
+var d = flag.Bool("d", false, "run as server")
 
 func init() {
 	flag.Set("logtostderr", "1")
@@ -19,13 +19,13 @@ func init() {
 
 func main() {
 	flag.Parse()
-	dirAbs, err := filepath.Abs(*root)
+	dirAbs, err := filepath.Abs(*home)
 	if err != nil {
 		glog.Errorln("root dir wrong!", err)
 		os.Exit(1)
 	}
 
-	os.Chdir(*root)
+	os.Chdir(*home)
 	if *d {
 		server, err := hsync.NewHsyncServer(*addr, dirAbs)
 		if err != nil {

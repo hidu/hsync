@@ -33,7 +33,7 @@ type FileStat struct {
 }
 
 func (stat *FileStat) IsDir() bool {
-	return stat.FileMode.IsDir() && stat.FileMode&os.ModeSymlink != 1
+	return stat.FileMode.IsDir() //&& stat.FileMode&os.ModeSymlink != 1
 }
 
 type MyFile struct {
@@ -47,8 +47,8 @@ func (f *MyFile) ToString() string {
 	return fmt.Sprintf("Name:%s,Mode:%v,Size:%d", f.Name, f.Stat.FileMode, f.Stat.Size)
 }
 
-func (trans *Trans) cleanFileName(name string) (fullName string, relName string, err error) {
-	fullName, err = filepath.Abs(trans.Home + "/" + name)
+func (trans *Trans) cleanFileName(rel_name string) (fullName string, relName string, err error) {
+	fullName, err = filepath.Abs(trans.Home + "/" + rel_name)
 	if err != nil {
 		return
 	}
@@ -56,9 +56,9 @@ func (trans *Trans) cleanFileName(name string) (fullName string, relName string,
 	return
 }
 
-func (trans *Trans) FileStat(name string, result *FileStat) (err error) {
-	glog.Infoln("Call FileStat", name)
-	fullName, _, err := trans.cleanFileName(name)
+func (trans *Trans) FileStat(relName string, result *FileStat) (err error) {
+	glog.Infoln("Call FileStat", relName)
+	fullName, _, err := trans.cleanFileName(relName)
 	if err != nil {
 		return err
 	}
@@ -91,9 +91,9 @@ func (trans *Trans) CopyFile(myFile *MyFile, result *int) error {
 	return err
 }
 
-func (trans *Trans) DeleteFile(name string, result *int) (err error) {
-	glog.Infoln("Call DeleteFile", name)
-	fullName, _, err := trans.cleanFileName(name)
+func (trans *Trans) DeleteFile(relName string, result *int) (err error) {
+	glog.Infoln("Call DeleteFile", relName)
+	fullName, _, err := trans.cleanFileName(relName)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,11 @@ func (trans *Trans) DeleteFile(name string, result *int) (err error) {
 func fileGetStat(name string, stat *FileStat) error {
 	info, err := os.Stat(name)
 	if err != nil {
-		return nil
+		if os.IsNotExist(err) {
+			return nil
+		} else {
+			return err
+		}
 	}
 	stat.Exists = true
 	stat.Mtime = info.ModTime()
@@ -123,19 +127,19 @@ func fileGetStat(name string, stat *FileStat) error {
 	return nil
 }
 
-func fileGetMyFile(name string) (*MyFile, error) {
+func fileGetMyFile(absPath string) (*MyFile, error) {
 	stat := new(FileStat)
-	err := fileGetStat(name, stat)
+	err := fileGetStat(absPath, stat)
 	if err != nil {
 		return nil, err
 	}
 	f := &MyFile{
-		Name: name,
+		Name: absPath,
 		Stat: stat,
 		Gzip: false,
 	}
 	if !stat.IsDir() {
-		f.Data, err = ioutil.ReadFile(name)
+		f.Data, err = ioutil.ReadFile(absPath)
 		if err != nil {
 			return nil, err
 		}

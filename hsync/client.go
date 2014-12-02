@@ -7,30 +7,46 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 )
 
 type HsyncClient struct {
-	serverAddr string
-	client     *rpc.Client
-	home       string
-	watcher    *fsnotify.Watcher
+	serverAddr      string
+	client          *rpc.Client
+	home            string
+	watcher         *fsnotify.Watcher
+	events          map[string]EventType
+	mu              sync.RWMutex
+	conncetTryTimes int
 }
+type EventType int
+
+const (
+	EVENT_UPDATE = 1
+	EVENT_DELETE = 2
+	EVENT_CHECK  = 3
+)
 
 func NewHsyncClient(addr string, home string) (*HsyncClient, error) {
 	hs := &HsyncClient{
 		serverAddr: addr,
 		home:       home,
+		events:     make(map[string]EventType),
 	}
 	return hs, nil
 }
 
 func (hc *HsyncClient) Connect() error {
+	hc.conncetTryTimes++
+	glog.Infoln("connect to", hc.serverAddr, "tryTimes:", hc.conncetTryTimes)
 	client, err := rpc.DialHTTP("tcp", hc.serverAddr)
 	if err != nil {
 		glog.Warningln("connect err", err)
 		return err
 	}
-	glog.Infoln("connect ok")
+	glog.Infoln("connect to", hc.serverAddr, "success")
+	hc.conncetTryTimes = 0
 	hc.client = client
 	return nil
 }
@@ -43,14 +59,21 @@ func (hc *HsyncClient) CheckPath(name string) (absPath string, relPath string, e
 	return
 }
 
-func (hc *HsyncClient) Call(method string, args interface{}, reply interface{}) error {
-	err := hc.client.Call(method, args, reply)
+func (hc *HsyncClient) Call(method string, args interface{}, reply interface{}) (err error) {
+	for hc.client == nil {
+		err = hc.Connect()
+		if err != nil {
+			glog.Warningln("not connected")
+			time.Sleep(1 * time.Second)
+		}
+	}
+	err = hc.client.Call(method, args, reply)
 	glog.V(2).Infoln("Call", method, err)
 	return err
 }
 
-func (hc *HsyncClient) RemoteSaveFile(name string) error {
-	absName, relName, err := hc.CheckPath(name)
+func (hc *HsyncClient) RemoteSaveFile(absPath string) error {
+	absName, relName, err := hc.CheckPath(absPath)
 	if err != nil {
 		return err
 	}
@@ -61,6 +84,11 @@ func (hc *HsyncClient) RemoteSaveFile(name string) error {
 	f.Name = relName
 	var reply int
 	err = hc.Call("Trans.CopyFile", f, &reply)
+	if reply == 1 {
+		glog.Infof("Send File [%s] suc", relName)
+	} else {
+		glog.Warningf("Send File [%s] failed,err:%v", relName, err)
+	}
 	return err
 }
 
@@ -73,6 +101,48 @@ func (hc *HsyncClient) RemoteGetStat(name string) (stat *FileStat, err error) {
 	return
 }
 
+func (hc *HsyncClient) RemoteDel(name string) error {
+	_, relPath, err := hc.CheckPath(name)
+	if err != nil {
+		return err
+	}
+	var reply int
+	err = hc.Call("Trans.DeleteFile", relPath, &reply)
+	if reply != 0 {
+		glog.Infof("Delete [%s] suc", relPath)
+	} else {
+		glog.Infof("Delete [%s] failed,err=", relPath, err)
+	}
+	return err
+}
+
+func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
+	absPath, relPath, err := hc.CheckPath(absName)
+	if err != nil {
+		return err
+	}
+	if isIgnore(relPath) {
+		glog.V(2).Infoln("sync ignore", relPath)
+		return
+	}
+	remoteStat, err := hc.RemoteGetStat(absPath)
+	if err != nil {
+		glog.Warningln("sync getstat failed", err)
+		return
+	}
+	var localStat FileStat
+	err = fileGetStat(absPath, &localStat)
+	if err != nil {
+		return
+	}
+	if !remoteStat.Exists || localStat.Md5 != remoteStat.Md5 {
+		err = hc.RemoteSaveFile(absPath)
+	} else {
+		glog.Infoln("Not Change", relPath)
+	}
+	return
+}
+
 func (hc *HsyncClient) Watch() (err error) {
 	hc.watcher, err = fsnotify.NewWatcher()
 	if err != nil {
@@ -80,6 +150,9 @@ func (hc *HsyncClient) Watch() (err error) {
 		return err
 	}
 	defer hc.watcher.Close()
+
+	go hc.eventLoop()
+
 	done := make(chan bool)
 
 	go func() {
@@ -113,50 +186,60 @@ func (hc *HsyncClient) addWatch(dir string) {
 	})
 }
 
-func (hc *HsyncClient) CheckOrSend(name string) (isSend bool, err error) {
-	absPath, relPath, err := hc.CheckPath(name)
-	if err != nil {
-		return false, err
-	}
-	if isIgnore(relPath) {
-		glog.V(2).Infoln("sync ignore", relPath)
-		return
-	}
-	stat, err := hc.RemoteGetStat(name)
-	if err != nil {
-		return
-	}
-	var localStat FileStat
-	err = fileGetStat(name, &localStat)
-	if err != nil {
-		return
-	}
-	if !stat.Exists || localStat.Md5 != stat.Md5 {
-		err = hc.RemoteSaveFile(absPath)
-		isSend = true
-	}
-	return
+func (hc *HsyncClient) addEvent(fileName string, eventType EventType) {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+	hc.events[fileName] = eventType
 }
 
-func (hc *HsyncClient) RemoteDel(name string) error {
-	_, relPath, err := hc.CheckPath(name)
-	if err != nil {
-		return err
+func (hc *HsyncClient) eventLoop() {
+	elist := make(map[string]EventType)
+	eventHander := func() {
+		if len(hc.events) == 0 {
+			return
+		}
+		hc.mu.Lock()
+		for k, v := range hc.events {
+			elist[k] = v
+			delete(hc.events, k)
+		}
+		hc.mu.Unlock()
+		if len(elist) == 0 {
+			return
+		}
+		for fileName, v := range elist {
+			switch v {
+			case EVENT_UPDATE:
+				hc.RemoteSaveFile(fileName)
+			case EVENT_CHECK:
+				hc.CheckOrSend(fileName)
+			case EVENT_DELETE:
+				hc.RemoteDel(fileName)
+			}
+			delete(elist, fileName)
+		}
 	}
-	var reply int
-	return hc.Call("Trans.DeleteFile", relPath, &reply)
+
+	ticker := time.NewTicker(1 * time.Second)
+	for {
+		select {
+		case <-ticker.C:
+			eventHander()
+		}
+	}
+
 }
 
 func (hc *HsyncClient) sync() {
 	glog.Infoln("sync...")
 	err := filepath.Walk(hc.home, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
-		if hc.home == absPath {
+		if hc.home == absPath || isIgnore(relPath) {
+			glog.Infoln("sync ignore", relPath)
 			return nil
 		}
-		send, err := hc.CheckOrSend(relPath)
-		glog.Infoln("sync", relPath, send, "err=", err)
-		return err
+		hc.addEvent(absPath, EVENT_CHECK)
+		return nil
 	})
 	glog.Infoln("sync done", err)
 }
@@ -168,14 +251,14 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 		return
 	}
 	if event.Op&fsnotify.Create == fsnotify.Create {
-		hc.handerChange(absPath)
+		hc.addEvent(absPath, EVENT_UPDATE)
 	}
 	if event.Op&fsnotify.Write == fsnotify.Write {
-		hc.handerChange(absPath)
+		hc.addEvent(absPath, EVENT_UPDATE)
 	}
 	if event.Op&fsnotify.Remove == fsnotify.Remove {
+		hc.addEvent(absPath, EVENT_DELETE)
 		hc.watcher.Remove(absPath)
-		hc.RemoteDel(absPath)
 	}
 }
 
@@ -189,8 +272,11 @@ func (hc *HsyncClient) handerChange(name string) error {
 	return nil
 }
 
-func isIgnore(name string) bool {
-	baseName := filepath.Base(name)
+func isIgnore(relName string) bool {
+	if strings.HasPrefix(relName, ".") {
+		return true
+	}
+	baseName := filepath.Base(relName)
 	if strings.HasPrefix(baseName, ".") || strings.HasSuffix(baseName, "~") {
 		return true
 	}
