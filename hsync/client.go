@@ -60,15 +60,20 @@ func (hc *HsyncClient) CheckPath(name string) (absPath string, relPath string, e
 }
 
 func (hc *HsyncClient) Call(method string, args interface{}, reply interface{}) (err error) {
+checkConnect:
 	for hc.client == nil {
 		err = hc.Connect()
 		if err != nil {
-			glog.Warningln("not connected")
+			glog.Warningln("not connected,reconnecting...")
 			time.Sleep(1 * time.Second)
 		}
 	}
 	err = hc.client.Call(method, args, reply)
 	glog.V(2).Infoln("Call", method, err)
+	if err == rpc.ErrShutdown {
+		hc.client = nil
+		goto checkConnect
+	}
 	return err
 }
 
@@ -178,6 +183,9 @@ func (hc *HsyncClient) addWatch(dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
 		if isIgnore(relPath) || !info.IsDir() {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		err = hc.watcher.Add(absPath)
@@ -195,6 +203,7 @@ func (hc *HsyncClient) addEvent(fileName string, eventType EventType) {
 func (hc *HsyncClient) eventLoop() {
 	elist := make(map[string]EventType)
 	eventHander := func() {
+		glog.V(2).Info("event buffer size:", len(hc.events))
 		if len(hc.events) == 0 {
 			return
 		}
@@ -227,15 +236,19 @@ func (hc *HsyncClient) eventLoop() {
 			eventHander()
 		}
 	}
-
+	glog.Error("sync loop exit")
 }
 
 func (hc *HsyncClient) sync() {
-	glog.Infoln("sync...")
+	glog.Infoln("sync start")
 	err := filepath.Walk(hc.home, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
-		if hc.home == absPath || isIgnore(relPath) {
-			glog.Infoln("sync ignore", relPath)
+		glog.V(2).Info("sync walk ", relPath)
+		if isIgnore(relPath) {
+			glog.Infoln("sync ignore", relPath, absPath)
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 		hc.addEvent(absPath, EVENT_CHECK)
@@ -273,6 +286,9 @@ func (hc *HsyncClient) handerChange(name string) error {
 }
 
 func isIgnore(relName string) bool {
+	if relName == "." {
+		return false
+	}
 	if strings.HasPrefix(relName, ".") {
 		return true
 	}

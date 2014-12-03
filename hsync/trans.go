@@ -118,11 +118,7 @@ func fileGetStat(name string, stat *FileStat) error {
 	stat.Size = info.Size()
 	stat.FileMode = info.Mode()
 	if !stat.IsDir() {
-		data, err := ioutil.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		stat.Md5 = ByteMd5(data)
+		stat.Md5 = FileMd5(name)
 	}
 	return nil
 }
