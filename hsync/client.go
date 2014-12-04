@@ -40,7 +40,7 @@ func NewHsyncClient(addr string, home string) (*HsyncClient, error) {
 func (hc *HsyncClient) Connect() error {
 	hc.conncetTryTimes++
 	glog.Infoln("connect to", hc.serverAddr, "tryTimes:", hc.conncetTryTimes)
-	client, err := rpc.DialHTTP("tcp", hc.serverAddr)
+	client, err := RpcDialHTTPPath("tcp", hc.serverAddr,rpc.DefaultRPCPath,2*time.Second)
 	if err != nil {
 		glog.Warningln("connect err", err)
 		return err
@@ -203,7 +203,7 @@ func (hc *HsyncClient) addEvent(fileName string, eventType EventType) {
 func (hc *HsyncClient) eventLoop() {
 	elist := make(map[string]EventType)
 	eventHander := func() {
-		glog.V(2).Info("event buffer size:", len(hc.events))
+		glog.V(2).Info("event buffer length:", len(hc.events))
 		if len(hc.events) == 0 {
 			return
 		}

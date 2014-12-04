@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 )
 
-var addr = flag.String("addr", ":8500", "server listen addr")
+var addr = flag.String("addr", "", "eg :8500,server listen addr")
 var home = flag.String("home", "./data/", "dir to sync")
 var d = flag.Bool("d", false, "run model,server | client")
 
@@ -34,11 +34,18 @@ func main() {
 	flag.Parse()
 	dirAbs, err := filepath.Abs(*home)
 	if err != nil {
-		glog.Errorln("root dir wrong!", err)
+		glog.Errorln("home dir wrong!", err)
 		os.Exit(1)
 	}
 
-	os.Chdir(*home)
+	err=os.Chdir(dirAbs)
+	if(err!=nil){
+		glog.Exitln("wrong home dir")
+	}
+	
+	if(*addr==""){
+		glog.Exitln("wrong addr")
+	}
 	if *d {
 		server, err := hsync.NewHsyncServer(*addr, dirAbs)
 		if err != nil {
