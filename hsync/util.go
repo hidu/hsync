@@ -5,14 +5,14 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"github.com/golang/glog"
 	"io"
 	"net"
 	"net/http"
 	"net/rpc"
 	"os"
-	"time"
 	"path/filepath"
-	"github.com/golang/glog"
+	"time"
 )
 
 func StrMd5(mystr string) string {
@@ -73,9 +73,9 @@ func checkDir(dir string, mode os.FileMode) error {
 }
 
 func copyFile(dest, src string) (err error) {
-	if(glog.V(2)){
-		defer func(){
-			glog.Warningln("copy file ",src,"->",dest,"err=",err)
+	if glog.V(2) {
+		defer func() {
+			glog.Warningln("copy file ", src, "->", dest, "err=", err)
 		}()
 	}
 	f, err := os.Open(src)
@@ -83,25 +83,24 @@ func copyFile(dest, src string) (err error) {
 		return err
 	}
 	defer f.Close()
-	
-	
+
 	info, err := f.Stat()
 	if err != nil || info.IsDir() {
 		return fmt.Errorf("src is dir")
 	}
-	
-	srcDirInfo,err:=os.Stat(filepath.Dir(src))
-	if(err!=nil){
+
+	srcDirInfo, err := os.Stat(filepath.Dir(src))
+	if err != nil {
 		return err
 	}
-	destDir:=filepath.Dir(dest)
-	if _,err:=os.Stat(destDir);os.IsNotExist(err){
-		err=checkDir(destDir,srcDirInfo.Mode())
-		if(err!=nil){
+	destDir := filepath.Dir(dest)
+	if _, err := os.Stat(destDir); os.IsNotExist(err) {
+		err = checkDir(destDir, srcDirInfo.Mode())
+		if err != nil {
 			return err
 		}
 	}
-	
+
 	d, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
 	defer d.Close()
 	_, err = io.Copy(d, f)

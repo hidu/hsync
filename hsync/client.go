@@ -13,7 +13,7 @@ import (
 
 type HsyncClient struct {
 	client          *rpc.Client
-	conf           *ClientConf
+	conf            *ClientConf
 	home            string
 	watcher         *fsnotify.Watcher
 	events          map[string]EventType
@@ -29,16 +29,24 @@ const (
 )
 
 func NewHsyncClient(confName string) (*HsyncClient, error) {
-	conf,err:=LoadClientConf(confName)
-	if(err!=nil){
-		return nil,err
+	conf, err := LoadClientConf(confName)
+	if err != nil {
+		return nil, err
 	}
 	hs := &HsyncClient{
-		conf:       conf,
-		home:       conf.Home,
-		events:     make(map[string]EventType),
+		conf:   conf,
+		home:   conf.Home,
+		events: make(map[string]EventType),
 	}
 	return hs, nil
+}
+
+func (hc *HsyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
+	return &RpcArgs{
+		Token:    hc.conf.Token,
+		FileName: fileName,
+		MyFile:   myFile,
+	}
 }
 
 func (hc *HsyncClient) Connect() error {
@@ -52,10 +60,20 @@ func (hc *HsyncClient) Connect() error {
 	glog.Infoln("connect to", hc.conf.ServerAddr, "success")
 	hc.conncetTryTimes = 0
 	hc.client = client
+
+	rv := hc.RemoteVersion()
+	if rv != version {
+		glog.Exitln("server version [", rv, "] != client version [", version, "]")
+	}
+
 	return nil
 }
 func (hc *HsyncClient) CheckPath(name string) (absPath string, relPath string, err error) {
-	absPath, err = filepath.Abs(name)
+	if !filepath.IsAbs(name) {
+		absPath, err = filepath.Abs(filepath.Join(hc.conf.ConfDir, name))
+	} else {
+		absPath = filepath.Clean(name)
+	}
 	if err != nil {
 		return
 	}
@@ -73,12 +91,20 @@ checkConnect:
 		}
 	}
 	err = hc.client.Call(method, args, reply)
+
 	glog.V(2).Infoln("Call", method, err)
 	if err == rpc.ErrShutdown {
 		hc.client = nil
 		goto checkConnect
 	}
 	return err
+}
+
+func (hc *HsyncClient) RemoteVersion() string {
+	var serverVersion string
+	hc.Call("Trans.Version", version, &serverVersion)
+	glog.Infoln("remote version is", serverVersion)
+	return serverVersion
 }
 
 func (hc *HsyncClient) RemoteSaveFile(absPath string) error {
@@ -92,7 +118,7 @@ func (hc *HsyncClient) RemoteSaveFile(absPath string) error {
 	}
 	f.Name = relName
 	var reply int
-	err = hc.Call("Trans.CopyFile", f, &reply)
+	err = hc.Call("Trans.CopyFile", hc.NewArgs(relName, f), &reply)
 	if reply == 1 {
 		glog.Infof("Send File [%s] suc", relName)
 	} else {
@@ -106,7 +132,7 @@ func (hc *HsyncClient) RemoteGetStat(name string) (stat *FileStat, err error) {
 	if err != nil {
 		return nil, err
 	}
-	err = hc.Call("Trans.FileStat", relName, &stat)
+	err = hc.Call("Trans.FileStat", hc.NewArgs(relName, nil), &stat)
 	return
 }
 
@@ -116,7 +142,7 @@ func (hc *HsyncClient) RemoteDel(name string) error {
 		return err
 	}
 	var reply int
-	err = hc.Call("Trans.DeleteFile", relPath, &reply)
+	err = hc.Call("Trans.DeleteFile", hc.NewArgs(relPath, nil), &reply)
 	if reply != 0 {
 		glog.Infof("Delete [%s] suc", relPath)
 	} else {
@@ -265,7 +291,7 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
 	absPath, relPath, err := hc.CheckPath(event.Name)
 	if err != nil || hc.conf.IsIgnore(relPath) {
-		glog.V(2).Infoln("ignore ",relPath)
+		glog.V(2).Infoln("ignore ", relPath)
 		return
 	}
 	if event.Op&fsnotify.Create == fsnotify.Create {
@@ -290,6 +316,11 @@ func (hc *HsyncClient) handerChange(name string) error {
 	return nil
 }
 
+var _defaultIgnores = map[string]int{
+	"hsync.json":  1,
+	"hsyncd.json": 1,
+}
+
 func isIgnore(relName string) bool {
 	if relName == "." {
 		return false
@@ -299,6 +330,9 @@ func isIgnore(relName string) bool {
 	}
 	baseName := filepath.Base(relName)
 	if strings.HasPrefix(baseName, ".") || strings.HasSuffix(baseName, "~") {
+		return true
+	}
+	if _, has := _defaultIgnores[baseName]; has {
 		return true
 	}
 	return false

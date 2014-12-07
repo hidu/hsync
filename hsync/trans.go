@@ -10,19 +10,16 @@ import (
 	"time"
 )
 
-
 type Trans struct {
-	Home     string
-	events   map[string]EventType
-	mu       sync.RWMutex
+	events map[string]EventType
+	mu     sync.RWMutex
 	server *HsyncServer
 }
 
 func NewTrans(server *HsyncServer) *Trans {
 	trans := &Trans{
-		server:  server,
-		Home:     server.conf.Home,
-		events:   make(map[string]EventType),
+		server: server,
+		events: make(map[string]EventType),
 	}
 	go trans.eventLoop()
 	return trans
@@ -34,6 +31,12 @@ type FileStat struct {
 	Md5      string
 	FileMode os.FileMode
 	Exists   bool
+}
+
+type RpcArgs struct {
+	Token    string
+	FileName string
+	MyFile   *MyFile
 }
 
 func (stat *FileStat) IsDir() bool {
@@ -57,18 +60,32 @@ func (trans *Trans) addEvent(relName string, et EventType) {
 	trans.events[relName] = et
 }
 
-func (trans *Trans) cleanFileName(rel_name string) (fullName string, relName string, err error) {
-	fullName, err = filepath.Abs(trans.Home + "/" + rel_name)
+func (trans *Trans) cleanFileName(fileName string) (absPath string, relName string, err error) {
+	if filepath.IsAbs(fileName) {
+		absPath = filepath.Clean(fileName)
+	} else {
+		absPath, err = filepath.Abs(filepath.Join(trans.server.conf.Home, fileName))
+	}
 	if err != nil {
 		return
 	}
-	relName, err = filepath.Rel(trans.Home, fullName)
+	relName, err = filepath.Rel(trans.server.conf.Home, absPath)
 	return
 }
+func (trans *Trans) checkToken(arg *RpcArgs) (bool, error) {
+	if trans.server.conf.Token != arg.Token {
+		glog.Warningln("token not match")
+		return false, fmt.Errorf("token not match")
+	}
+	return true, nil
+}
 
-func (trans *Trans) FileStat(relName string, result *FileStat) (err error) {
-	glog.Infoln("Call FileStat", relName)
-	fullName, _, err := trans.cleanFileName(relName)
+func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
+	if suc, err := trans.checkToken(arg); !suc {
+		return err
+	}
+	glog.Infoln("Call FileStat", arg.FileName)
+	fullName, _, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
 	}
@@ -76,7 +93,11 @@ func (trans *Trans) FileStat(relName string, result *FileStat) (err error) {
 	return err
 }
 
-func (trans *Trans) CopyFile(myFile *MyFile, result *int) error {
+func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
+	if suc, err := trans.checkToken(arg); !suc {
+		return err
+	}
+	myFile := arg.MyFile
 	glog.Infoln("Call CopyFile ", myFile.ToString())
 	fullName, relName, err := trans.cleanFileName(myFile.Name)
 	if err != nil {
@@ -99,9 +120,18 @@ func (trans *Trans) CopyFile(myFile *MyFile, result *int) error {
 	return err
 }
 
-func (trans *Trans) DeleteFile(relName string, result *int) (err error) {
-	glog.Infoln("Call DeleteFile", relName)
-	fullName, relName, err := trans.cleanFileName(relName)
+func (trans *Trans) Version(clientVersion string, v *string) error {
+	glog.Infoln("get version,client version:", clientVersion)
+	*v = version
+	return nil
+}
+
+func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
+	if suc, err := trans.checkToken(arg); !suc {
+		return err
+	}
+	glog.Infoln("Call DeleteFile", arg.FileName)
+	fullName, relName, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
 	}
@@ -117,15 +147,15 @@ func (trans *Trans) DeleteFile(relName string, result *int) (err error) {
 func (trans *Trans) eventLoop() {
 	elist := make(map[string]EventType)
 	dealEvent := func(relName string, et EventType) {
-		deployTo:=trans.server.conf.getDeployTo(relName)
-		glog.V(2).Infoln("deploy",relName,"-->",deployTo)
-		if(len(deployTo)>0){
+		deployTo := trans.server.conf.getDeployTo(relName)
+		glog.V(2).Infoln("deploy", relName, "-->", deployTo)
+		if len(deployTo) > 0 {
 			if et == EVENT_UPDATE {
-				for _,to:=range deployTo{
-					copyFile(to,relName)
+				for _, to := range deployTo {
+					copyFile(to, relName)
 				}
-			}else if  et == EVENT_DELETE{
-			
+			} else if et == EVENT_DELETE {
+
 			}
 		}
 	}
