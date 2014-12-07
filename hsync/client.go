@@ -12,8 +12,8 @@ import (
 )
 
 type HsyncClient struct {
-	serverAddr      string
 	client          *rpc.Client
+	conf           *ClientConf
 	home            string
 	watcher         *fsnotify.Watcher
 	events          map[string]EventType
@@ -28,10 +28,14 @@ const (
 	EVENT_CHECK  = 3
 )
 
-func NewHsyncClient(addr string, home string) (*HsyncClient, error) {
+func NewHsyncClient(confName string) (*HsyncClient, error) {
+	conf,err:=LoadClientConf(confName)
+	if(err!=nil){
+		return nil,err
+	}
 	hs := &HsyncClient{
-		serverAddr: addr,
-		home:       home,
+		conf:       conf,
+		home:       conf.Home,
 		events:     make(map[string]EventType),
 	}
 	return hs, nil
@@ -39,13 +43,13 @@ func NewHsyncClient(addr string, home string) (*HsyncClient, error) {
 
 func (hc *HsyncClient) Connect() error {
 	hc.conncetTryTimes++
-	glog.Infoln("connect to", hc.serverAddr, "tryTimes:", hc.conncetTryTimes)
-	client, err := RpcDialHTTPPath("tcp", hc.serverAddr,rpc.DefaultRPCPath,2*time.Second)
+	glog.Infoln("connect to", hc.conf.ServerAddr, "tryTimes:", hc.conncetTryTimes)
+	client, err := RpcDialHTTPPath("tcp", hc.conf.ServerAddr, rpc.DefaultRPCPath, 2*time.Second)
 	if err != nil {
 		glog.Warningln("connect err", err)
 		return err
 	}
-	glog.Infoln("connect to", hc.serverAddr, "success")
+	glog.Infoln("connect to", hc.conf.ServerAddr, "success")
 	hc.conncetTryTimes = 0
 	hc.client = client
 	return nil
@@ -260,7 +264,8 @@ func (hc *HsyncClient) sync() {
 func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
 	absPath, relPath, err := hc.CheckPath(event.Name)
-	if err != nil || isIgnore(relPath) {
+	if err != nil || hc.conf.IsIgnore(relPath) {
+		glog.V(2).Infoln("ignore ",relPath)
 		return
 	}
 	if event.Op&fsnotify.Create == fsnotify.Create {

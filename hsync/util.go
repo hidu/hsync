@@ -1,16 +1,18 @@
 package hsync
 
 import (
+	"bufio"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
-	"os"
 	"net"
 	"net/http"
-	"bufio"
 	"net/rpc"
+	"os"
 	"time"
-	"errors"
+	"path/filepath"
+	"github.com/golang/glog"
 )
 
 func StrMd5(mystr string) string {
@@ -34,10 +36,9 @@ func FileMd5(name string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-
-func RpcDialHTTPPath(network, address, path string,timeout time.Duration) (*rpc.Client, error) {
+func RpcDialHTTPPath(network, address, path string, timeout time.Duration) (*rpc.Client, error) {
 	var err error
-	conn, err := net.DialTimeout(network, address,timeout)
+	conn, err := net.DialTimeout(network, address, timeout)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +48,7 @@ func RpcDialHTTPPath(network, address, path string,timeout time.Duration) (*rpc.
 	// before switching to RPC protocol.
 	resp, err := http.ReadResponse(bufio.NewReader(conn), &http.Request{Method: "CONNECT"})
 	connected := "200 Connected to Go RPC"
-	
+
 	if err == nil && resp.Status == connected {
 		return rpc.NewClient(conn), nil
 	}
@@ -63,26 +64,46 @@ func RpcDialHTTPPath(network, address, path string,timeout time.Duration) (*rpc.
 	}
 }
 
-func checkDir(dir string,mode os.FileMode) error{
-	_, err:= os.Stat(dir)
+func checkDir(dir string, mode os.FileMode) error {
+	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
 		return os.MkdirAll(dir, mode)
 	}
 	return err
 }
 
-func copyFile(dest,src string)error{
-	f,err:=os.Open(src)
-	if(err!=nil){
+func copyFile(dest, src string) (err error) {
+	if(glog.V(2)){
+		defer func(){
+			glog.Warningln("copy file ",src,"->",dest,"err=",err)
+		}()
+	}
+	f, err := os.Open(src)
+	if err != nil {
 		return err
 	}
 	defer f.Close()
-	info,err:=f.Stat()
-	if(err!=nil || info.IsDir()){
-		return fmt.Errorf("src is dir")	
+	
+	
+	info, err := f.Stat()
+	if err != nil || info.IsDir() {
+		return fmt.Errorf("src is dir")
 	}
-	d,err:=os.OpenFile(dest,os.O_RDWR|os.O_CREATE,info.Mode())
+	
+	srcDirInfo,err:=os.Stat(filepath.Dir(src))
+	if(err!=nil){
+		return err
+	}
+	destDir:=filepath.Dir(dest)
+	if _,err:=os.Stat(destDir);os.IsNotExist(err){
+		err=checkDir(destDir,srcDirInfo.Mode())
+		if(err!=nil){
+			return err
+		}
+	}
+	
+	d, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
 	defer d.Close()
-	_,err=io.Copy(d,f)
+	_, err = io.Copy(d, f)
 	return err
 }

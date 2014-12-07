@@ -6,85 +6,23 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
-	"time"
 	"sync"
-	"strings"
-	"regexp"
+	"time"
 )
 
-const serverMapConfName string="hsync_map.txt" 
-
-type User struct {
-	Name string
-	Psw  string
-	Home string
-}
 
 type Trans struct {
-	Home string
-	events map[string]EventType
-	mu sync.RWMutex
-	transMap []*mapInfo
+	Home     string
+	events   map[string]EventType
+	mu       sync.RWMutex
+	server *HsyncServer
 }
 
-type mapInfo struct{
-	src string
-	dest string
-	isDir bool
-}
-
-func NewTrans(home string) *Trans {
-	home, _ = filepath.Abs(home)
-	
-	transMap:=make([]*mapInfo,0)
-	
-	transMapFile:=filepath.Join(home,serverMapConfName)
-	data,err:=ioutil.ReadFile(transMapFile)
-	if(err==nil && len(data)>0){
-		r:=regexp.MustCompile(`\s+`)
-		for _,line:=range strings.Split(string(data),"\n"){
-			line=strings.TrimSpace(line)
-			if(line==""){
-				continue
-			}
-			lineArr:=r.Split(line,2)
-			if(len(lineArr)!=2){
-				glog.Warningln("hsync_map wrong[",line,"]")
-				continue
-			}
-			minfo:=&mapInfo{
-				src:lineArr[0],
-				dest:lineArr[1],
-			}
-			srcInfo,err:=os.Stat(minfo.src)
-			if(err!=nil){
-				glog.Warningln("conf line [",line,"] err:",err)
-				continue
-			}
-			minfo.isDir=srcInfo.IsDir()
-			var destInfo os.FileInfo
-			destInfo,err=os.Stat(minfo.dest)
-			if(err!=nil && os.IsNotExist(err)){
-				err=checkDir(minfo.dest,srcInfo.Mode())
-				if(err!=nil){
-					glog.Warningln("create dir failed",err)
-					continue
-				}
-			}
-			if(err==nil && destInfo!=nil&& minfo.isDir && !destInfo.IsDir()){
-				glog.Warningln("wrong;src is dir buf dest is not dir")
-				continue
-			}
-			transMap=append(transMap,minfo)
-		}
-	}
-	
-	glog.Infoln("hsync_map",transMap)
-	
-	trans:= &Trans{
-		Home: home,
-		events:make(map[string]EventType),
-		transMap:transMap,
+func NewTrans(server *HsyncServer) *Trans {
+	trans := &Trans{
+		server:  server,
+		Home:     server.conf.Home,
+		events:   make(map[string]EventType),
 	}
 	go trans.eventLoop()
 	return trans
@@ -113,10 +51,10 @@ func (f *MyFile) ToString() string {
 	return fmt.Sprintf("Name:%s,Mode:%v,Size:%d", f.Name, f.Stat.FileMode, f.Stat.Size)
 }
 
-func (trans *Trans)addEvent(relName string,et EventType){
+func (trans *Trans) addEvent(relName string, et EventType) {
 	trans.mu.Lock()
 	defer trans.mu.Unlock()
-	trans.events[relName]=et
+	trans.events[relName] = et
 }
 
 func (trans *Trans) cleanFileName(rel_name string) (fullName string, relName string, err error) {
@@ -149,13 +87,13 @@ func (trans *Trans) CopyFile(myFile *MyFile, result *int) error {
 	if !myFile.Stat.IsDir() {
 		dir = filepath.Dir(fullName)
 	}
-	err=checkDir(dir,myFile.Stat.FileMode)
+	err = checkDir(dir, myFile.Stat.FileMode)
 	if err != nil {
 		return err
 	}
 	if !myFile.Stat.IsDir() {
 		err = ioutil.WriteFile(fullName, myFile.Data, myFile.Stat.FileMode)
-		trans.addEvent(relName,EVENT_UPDATE)
+		trans.addEvent(relName, EVENT_UPDATE)
 	}
 	*result = 1
 	return err
@@ -171,62 +109,23 @@ func (trans *Trans) DeleteFile(relName string, result *int) (err error) {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	*result=1
-	trans.addEvent(relName,EVENT_DELETE)
+	*result = 1
+	trans.addEvent(relName, EVENT_DELETE)
 	return err
 }
 
-
 func (trans *Trans) eventLoop() {
 	elist := make(map[string]EventType)
-	dealEvent:=func(relName string,et EventType){
-		var info os.FileInfo
-		var dirInfo os.FileInfo
-		var err error
-		if(et==EVENT_UPDATE){
-			info,err=os.Stat(relName)
-			if(err!=nil){
-				glog.Warningln("get eventFile stat failed",err)
-				return
-			}
-			if(info.IsDir()){
-				return
-			}
-			dirInfo,err=os.Stat(filepath.Dir(relName))
-			if(err!=nil){
-				glog.Warningln("get eventFile dir stat failed",err)
-				return
-			}
-		}
-		for _,minfo:=range trans.transMap{
-		    glog.V(2).Infoln("relName:",relName,"scr:",minfo.src,"dest:",minfo.dest)
-			if(!strings.HasPrefix(relName,minfo.src)){
-				continue
-			}
-			
-			if(et==EVENT_UPDATE){
-				if(minfo.isDir){
-					rel,err:=filepath.Rel(minfo.src,relName)
-					if(err!=nil){
-						glog.Warningln("get trans map file failed",err)
-						continue
-					}
-					destPath:=filepath.Join(minfo.dest,rel)
-					
-					glog.V(2).Infoln("copy ",relName,"->",destPath)
-					
-					dir:=filepath.Dir(destPath)
-					err=checkDir(dir,dirInfo.Mode())
-					if(err!=nil){
-						glog.Warningln("create dir failed,dir is:",dir)
-						return
-					}
-					copyFile(destPath,relName)
-				}else{
-					copyFile(minfo.dest,relName)
+	dealEvent := func(relName string, et EventType) {
+		deployTo:=trans.server.conf.getDeployTo(relName)
+		glog.V(2).Infoln("deploy",relName,"-->",deployTo)
+		if(len(deployTo)>0){
+			if et == EVENT_UPDATE {
+				for _,to:=range deployTo{
+					copyFile(to,relName)
 				}
-			}else if(et==EVENT_DELETE){
-				
+			}else if  et == EVENT_DELETE{
+			
 			}
 		}
 	}
@@ -245,11 +144,10 @@ func (trans *Trans) eventLoop() {
 			return
 		}
 		for fileName, v := range elist {
-			dealEvent(fileName,v)
+			dealEvent(fileName, v)
 			delete(elist, fileName)
 		}
 	}
-
 
 	ticker := time.NewTicker(1 * time.Second)
 	for {

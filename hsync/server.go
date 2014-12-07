@@ -1,34 +1,36 @@
 package hsync
 
 import (
-	"log"
 	"net"
 	"net/http"
 	"net/rpc"
+	"fmt"
+	"github.com/golang/glog"
 )
 
 type HsyncServer struct {
-	addr    string
-	baseDir string
+	conf *ServerConf
 }
 
-func NewHsyncServer(addr string, baseDir string) (*HsyncServer, error) {
+func NewHsyncServer(confName string) (*HsyncServer, error) {
+	conf,err:=LoadServerConf(confName)
+	if(err!=nil){
+		return nil,err
+	}
 	server := &HsyncServer{
-		addr:    addr,
-		baseDir: baseDir,
+		conf:conf,
 	}
 	return server, nil
 }
 
 func (server *HsyncServer) Start() {
-	trans := NewTrans(server.baseDir)
+	trans := NewTrans(server)
 	rpc.Register(trans)
 	rpc.HandleHTTP()
-	l, err := net.Listen("tcp", server.addr)
+	fmt.Println("hsync server lister at ",server.conf.Addr)
+	l, err := net.Listen("tcp", server.conf.Addr)
 	if err != nil {
-		log.Fatal("ListenAndServe: ", err)
+		glog.Exitln("ListenAndServe,err ", err)
 	}
 	http.Serve(l, nil)
 }
-
-
