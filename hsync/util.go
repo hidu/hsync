@@ -12,6 +12,7 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -67,10 +68,12 @@ func RpcDialHTTPPath(network, address, path string, timeout time.Duration) (*rpc
 func checkDir(dir string, mode os.FileMode) error {
 	_, err := os.Stat(dir)
 	if os.IsNotExist(err) {
-		return os.MkdirAll(dir, mode)
+		return os.MkdirAll(dir, 0755)
 	}
 	return err
 }
+
+var _copyrw sync.Mutex
 
 func copyFile(dest, src string) (err error) {
 	if glog.V(2) {
@@ -89,20 +92,23 @@ func copyFile(dest, src string) (err error) {
 		return fmt.Errorf("src is dir")
 	}
 
-	srcDirInfo, err := os.Stat(filepath.Dir(src))
+	_, err = os.Stat(filepath.Dir(src))
 	if err != nil {
 		return err
 	}
 	destDir := filepath.Dir(dest)
 	if _, err := os.Stat(destDir); os.IsNotExist(err) {
-		err = checkDir(destDir, srcDirInfo.Mode())
+		err = checkDir(destDir, 0755)
 		if err != nil {
 			return err
 		}
 	}
+	_copyrw.Lock()
+	defer _copyrw.Unlock()
 
 	d, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
 	defer d.Close()
+	d.Truncate(0)
 	_, err = io.Copy(d, f)
 	return err
 }

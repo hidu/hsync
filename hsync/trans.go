@@ -99,22 +99,20 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 	}
 	myFile := arg.MyFile
 	glog.Infoln("Call CopyFile ", myFile.ToString())
-	fullName, relName, err := trans.cleanFileName(myFile.Name)
+	fullName, relName, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		glog.Warningln("CopyFile err:", err)
 		return fmt.Errorf("wrong file name")
 	}
-	dir := fullName
-	if !myFile.Stat.IsDir() {
-		dir = filepath.Dir(fullName)
-	}
-	err = checkDir(dir, myFile.Stat.FileMode)
-	if err != nil {
-		return err
-	}
-	if !myFile.Stat.IsDir() {
+	if myFile.Stat.IsDir() {
+		err = checkDir(fullName, myFile.Stat.FileMode)
+	} else {
+		err = checkDir(filepath.Dir(fullName), 0755)
 		err = ioutil.WriteFile(fullName, myFile.Data, myFile.Stat.FileMode)
 		trans.addEvent(relName, EVENT_UPDATE)
+	}
+	if err != nil {
+		return err
 	}
 	*result = 1
 	return err

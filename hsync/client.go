@@ -14,7 +14,6 @@ import (
 type HsyncClient struct {
 	client          *rpc.Client
 	conf            *ClientConf
-	home            string
 	watcher         *fsnotify.Watcher
 	events          map[string]EventType
 	mu              sync.RWMutex
@@ -35,7 +34,6 @@ func NewHsyncClient(confName string) (*HsyncClient, error) {
 	}
 	hs := &HsyncClient{
 		conf:   conf,
-		home:   conf.Home,
 		events: make(map[string]EventType),
 	}
 	return hs, nil
@@ -70,14 +68,14 @@ func (hc *HsyncClient) Connect() error {
 }
 func (hc *HsyncClient) CheckPath(name string) (absPath string, relPath string, err error) {
 	if !filepath.IsAbs(name) {
-		absPath, err = filepath.Abs(filepath.Join(hc.conf.ConfDir, name))
+		absPath, err = filepath.Abs(filepath.Join(hc.conf.Home, name))
 	} else {
 		absPath = filepath.Clean(name)
 	}
 	if err != nil {
 		return
 	}
-	relPath, err = filepath.Rel(hc.home, absPath)
+	relPath, err = filepath.Rel(hc.conf.Home, absPath)
 	return
 }
 
@@ -200,8 +198,8 @@ func (hc *HsyncClient) Watch() (err error) {
 			}
 		}
 	}()
-	hc.watcher.Add(hc.home)
-	hc.addWatch(hc.home)
+	hc.watcher.Add(hc.conf.Home)
+	hc.addWatch(hc.conf.Home)
 
 	hc.sync()
 
@@ -271,7 +269,7 @@ func (hc *HsyncClient) eventLoop() {
 
 func (hc *HsyncClient) sync() {
 	glog.Infoln("sync start")
-	err := filepath.Walk(hc.home, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(hc.conf.Home, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
 		glog.V(2).Info("sync walk ", relPath)
 		if isIgnore(relPath) {
