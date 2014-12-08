@@ -2,22 +2,16 @@ hsync
 ===
 real time sync dir by fsnotify
 
-
-
-# 1.install
+## install
 
 ```
 go get -u github.com/hidu/hsync
 ```
-
-download from 
+or download from 
 [![Gobuild Download](http://gobuild.io/badge/github.com/hidu/hsync/downloads.svg)](http://gobuild.io/github.com/hidu/hsync)
 
-
-
-# 2.useage
-
-##server slide:
+## useage
+###server slide:
 >hsync -d hsyncd.json
 
 ```
@@ -30,7 +24,7 @@ download from
     ]
 }
 ```
-##client slide:
+###client slide:
 >hsync hsync.json  
 
 ```
@@ -44,8 +38,4 @@ download from
 }
 ```
 
-default ignore files:
-```
-.*
-*~
-```
+default ignore files: .*,*~
