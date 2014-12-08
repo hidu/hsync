@@ -1,0 +1,5 @@
+filesets:
+includes:
+- README.md
+excludes:
+- .*.go
