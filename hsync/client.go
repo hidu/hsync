@@ -294,6 +294,10 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	}
 	if event.Op&fsnotify.Create == fsnotify.Create {
 		hc.addEvent(absPath, EVENT_UPDATE)
+		stat, err := os.Stat(absPath)
+		if err != nil && stat.IsDir() {
+			hc.addWatch(absPath)
+		}
 	}
 	if event.Op&fsnotify.Write == fsnotify.Write {
 		hc.addEvent(absPath, EVENT_UPDATE)
