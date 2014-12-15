@@ -3,3 +3,5 @@ filesets:
         - README.md
     excludes:
         - .*.go
+settings:
+    targetdir: ""
