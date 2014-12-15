@@ -3,5 +3,3 @@ filesets:
         - README.md
     excludes:
         - .*.go
-settings:
-    targetdir: "hsync_bin"
