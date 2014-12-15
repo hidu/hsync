@@ -1,5 +1,5 @@
 filesets:
-includes:
-- README.md
-excludes:
-- .*.go
+    includes:
+        - README.md
+    excludes:
+        - .*.go
