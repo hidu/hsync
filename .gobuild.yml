@@ -4,4 +4,4 @@ filesets:
     excludes:
         - .*.go
 settings:
-    targetdir: ""
+    targetdir: "hsync_bin"
