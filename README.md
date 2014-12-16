@@ -16,7 +16,7 @@ or download from
 
 ```
 {
-    "server":":8700",
+    "addr":":8700",
     "home":"./",
     "token":"abc",
     "deploy":[

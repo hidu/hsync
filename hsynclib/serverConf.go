@@ -2,6 +2,7 @@ package hsync
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/golang/glog"
 	"io/ioutil"
 	"path/filepath"
@@ -37,6 +38,11 @@ func LoadServerConf(name string) (conf *ServerConf, err error) {
 		}
 		conf.Home = filepath.Clean(conf.Home)
 		conf.init()
+	}
+	if err == nil {
+		if conf.Addr == "" {
+			err = fmt.Errorf("server listen addr is empty")
+		}
 	}
 	if err != nil {
 		glog.Warningln("load conf [", name, "]failed,err:", err)
@@ -77,7 +83,7 @@ func (conf *ServerConf) getDeployTo(relName string) []string {
 
 var ConfDemoServer string = `
 {
-    "server":":8700",
+    "addr":":8700",
     "home":"./",
     "token":"abc",
     "deploy":[

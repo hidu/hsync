@@ -27,7 +27,7 @@ func (server *HsyncServer) Start() {
 	trans := NewTrans(server)
 	rpc.Register(trans)
 	rpc.HandleHTTP()
-	fmt.Println("hsync server lister at ", server.conf.Addr)
+	fmt.Println("hsync server listen at ", server.conf.Addr)
 	l, err := net.Listen("tcp", server.conf.Addr)
 	if err != nil {
 		glog.Exitln("ListenAndServe,err ", err)

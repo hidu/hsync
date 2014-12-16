@@ -3,7 +3,9 @@ package hsync
 import (
 	"fmt"
 	"github.com/golang/glog"
+	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -44,10 +46,13 @@ func (stat *FileStat) IsDir() bool {
 }
 
 type MyFile struct {
-	Name string
-	Data []byte
-	Stat *FileStat
-	Gzip bool
+	Name  string
+	Data  []byte
+	Stat  *FileStat
+	Gzip  bool
+	Total int64
+	Index int64
+	Pos   int64
 }
 
 func (f *MyFile) ToString() string {
@@ -108,13 +113,34 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 		err = checkDir(fullName, myFile.Stat.FileMode)
 	} else {
 		err = checkDir(filepath.Dir(fullName), 0755)
-		err = ioutil.WriteFile(fullName, myFile.Data, myFile.Stat.FileMode)
-		trans.addEvent(relName, EVENT_UPDATE)
+		var data []byte
+		if myFile.Gzip {
+			data = dataGzipDecode(myFile.Data)
+		} else {
+			data = myFile.Data
+		}
+
+		if myFile.Index == 0 {
+			err = ioutil.WriteFile(fullName, data, myFile.Stat.FileMode)
+		} else {
+			var f *os.File
+			f, err = os.OpenFile(fullName, os.O_RDWR, myFile.Stat.FileMode)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = f.WriteAt(data, myFile.Pos)
+		}
+		if myFile.Total == 0 || myFile.Index+1 == myFile.Total {
+			trans.addEvent(relName, EVENT_UPDATE)
+		}
 	}
 	if err != nil {
+		glog.Warningf("receiver file [%s],[%d/%d] failed", relName, myFile.Index+1, myFile.Total)
 		return err
 	}
 	*result = 1
+	glog.Infof("receiver file [%s],[%d/%d] suc", relName, myFile.Index+1, myFile.Total)
 	return err
 }
 
@@ -206,7 +232,9 @@ func fileGetStat(name string, stat *FileStat) error {
 	return nil
 }
 
-func fileGetMyFile(absPath string) (*MyFile, error) {
+const TRANS_MAX_LENGTH = 10485760 //10Mb
+
+func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 	stat := new(FileStat)
 	err := fileGetStat(absPath, stat)
 	if err != nil {
@@ -216,10 +244,19 @@ func fileGetMyFile(absPath string) (*MyFile, error) {
 		Name: absPath,
 		Stat: stat,
 		Gzip: false,
+		Pos:  TRANS_MAX_LENGTH * index,
 	}
 	if !stat.IsDir() {
-		f.Data, err = ioutil.ReadFile(absPath)
+		my, err := os.Open(absPath)
 		if err != nil {
+			return nil, err
+		}
+		f.Index = index
+		f.Total = int64(math.Ceil(float64(stat.Size) / float64(TRANS_MAX_LENGTH)))
+		var data []byte = make([]byte, TRANS_MAX_LENGTH)
+		n, err := my.ReadAt(data, f.Pos)
+		f.Data = data[:n]
+		if err != nil && err != io.EOF {
 			return nil, err
 		}
 	}

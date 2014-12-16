@@ -110,18 +110,26 @@ func (hc *HsyncClient) RemoteSaveFile(absPath string) error {
 	if err != nil {
 		return err
 	}
-	f, err := fileGetMyFile(absName)
+	var index int64 = 0
+sendSlice:
+	f, err := fileGetMyFile(absName, index)
 	if err != nil {
+		glog.Warningf("Send FIle [%s] failed,get file failed,err=%v", relName, err)
 		return err
 	}
 	f.Name = relName
 	var reply int
 	err = hc.Call("Trans.CopyFile", hc.NewArgs(relName, f), &reply)
 	if reply == 1 {
-		glog.Infof("Send File [%s] suc", relName)
+		glog.Infof("Send File [%s] [%d/%d] suc", relName, index+1, f.Total)
+		if f.Total > 1 && index+1 < f.Total {
+			index++
+			goto sendSlice
+		}
 	} else {
-		glog.Warningf("Send File [%s] failed,err:%v", relName, err)
+		glog.Warningf("Send File [%s] [%d/%d] failed,err:%v", relName, index+1, f.Total, err)
 	}
+
 	return err
 }
 
@@ -210,7 +218,13 @@ func (hc *HsyncClient) Watch() (err error) {
 func (hc *HsyncClient) addWatch(dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
-		if isIgnore(relPath) || !info.IsDir() {
+		//only need watch dir
+		if !info.IsDir() {
+			return nil
+		}
+
+		if isIgnore(relPath) || hc.conf.IsIgnore(relPath) {
+			glog.Infoln("ignore watch,path=[", relPath, "]")
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
@@ -268,12 +282,12 @@ func (hc *HsyncClient) eventLoop() {
 }
 
 func (hc *HsyncClient) sync() {
-	glog.Infoln("sync start")
+	glog.Infoln("sync scan start")
 	err := filepath.Walk(hc.conf.Home, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
 		glog.V(2).Info("sync walk ", relPath)
 		if isIgnore(relPath) {
-			glog.Infoln("sync ignore", relPath, absPath)
+			glog.Infoln("sync ignore", relPath)
 			if info.IsDir() {
 				return filepath.SkipDir
 			}
@@ -282,7 +296,7 @@ func (hc *HsyncClient) sync() {
 		hc.addEvent(absPath, EVENT_CHECK)
 		return nil
 	})
-	glog.Infoln("sync done", err)
+	glog.Infoln("sync scan done", err)
 }
 
 func (hc *HsyncClient) eventHander(event fsnotify.Event) {

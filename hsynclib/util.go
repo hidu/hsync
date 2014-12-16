@@ -2,11 +2,14 @@ package hsync
 
 import (
 	"bufio"
+	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -111,4 +114,19 @@ func copyFile(dest, src string) (err error) {
 	d.Truncate(0)
 	_, err = io.Copy(d, f)
 	return err
+}
+
+func dataGzipEncode(data []byte) (out []byte) {
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	gw.Write(data)
+	gw.Flush()
+	gw.Close()
+	return buf.Bytes()
+}
+
+func dataGzipDecode(data []byte) (out []byte) {
+	gr, _ := gzip.NewReader(bytes.NewBuffer(data))
+	bs, _ := ioutil.ReadAll(gr)
+	return bs
 }
