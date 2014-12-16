@@ -306,6 +306,7 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 		glog.V(2).Infoln("ignore ", relPath)
 		return
 	}
+
 	if event.Op&fsnotify.Create == fsnotify.Create {
 		hc.addEvent(absPath, EVENT_UPDATE)
 		stat, err := os.Stat(absPath)
@@ -313,10 +314,18 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 			hc.addWatch(absPath)
 		}
 	}
+
 	if event.Op&fsnotify.Write == fsnotify.Write {
 		hc.addEvent(absPath, EVENT_UPDATE)
 	}
+
 	if event.Op&fsnotify.Remove == fsnotify.Remove {
+		hc.addEvent(absPath, EVENT_DELETE)
+		hc.watcher.Remove(absPath)
+	}
+
+	//@todo
+	if event.Op&fsnotify.Rename == fsnotify.Rename {
 		hc.addEvent(absPath, EVENT_DELETE)
 		hc.watcher.Remove(absPath)
 	}

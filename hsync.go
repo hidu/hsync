@@ -8,10 +8,9 @@ package main
 
 import (
 	"flag"
-	"github.com/hidu/hsync/hsynclib"
-	//	"./hsync"
 	"fmt"
 	"github.com/golang/glog"
+	"github.com/hidu/hsync/hsynclib"
 	"os"
 )
 

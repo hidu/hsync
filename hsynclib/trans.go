@@ -103,10 +103,18 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 		return err
 	}
 	myFile := arg.MyFile
-	glog.Infoln("Call CopyFile ", myFile.ToString())
+	//	glog.Infoln("Call CopyFile ", myFile.ToString())
 	fullName, relName, err := trans.cleanFileName(arg.FileName)
+
+	defer func() {
+		if err == nil {
+			glog.Infof("receiver file [%s] [%d/%d] suc,size:%d", relName, myFile.Index+1, myFile.Total, len(myFile.Data))
+		} else {
+			glog.Warningf("receiver file [%s] [%d/%d] failed,err:%v", relName, myFile.Index+1, myFile.Total, err)
+		}
+	}()
+
 	if err != nil {
-		glog.Warningln("CopyFile err:", err)
 		return fmt.Errorf("wrong file name")
 	}
 	if myFile.Stat.IsDir() {
@@ -136,11 +144,9 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 		}
 	}
 	if err != nil {
-		glog.Warningf("receiver file [%s],[%d/%d] failed", relName, myFile.Index+1, myFile.Total)
 		return err
 	}
 	*result = 1
-	glog.Infof("receiver file [%s],[%d/%d] suc", relName, myFile.Index+1, myFile.Total)
 	return err
 }
 
@@ -255,10 +261,11 @@ func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 		f.Total = int64(math.Ceil(float64(stat.Size) / float64(TRANS_MAX_LENGTH)))
 		var data []byte = make([]byte, TRANS_MAX_LENGTH)
 		n, err := my.ReadAt(data, f.Pos)
-		f.Data = data[:n]
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
+		f.Data = dataGzipEncode(data[:n])
+		f.Gzip = true
 	}
 	return f, nil
 }

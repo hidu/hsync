@@ -65,7 +65,7 @@ var ConfDemoClient string = `
 {
     "server":"127.0.0.1:8700",
     "home":"./",
-    "token":"abc",
+    "token":"hsynctoken201412",
     "ignore":[
         "*.exe"
     ]

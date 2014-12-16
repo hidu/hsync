@@ -11,7 +11,7 @@ or download from
 [![Gobuild Download](http://gobuild.io/badge/github.com/hidu/hsync/downloads.svg)](http://gobuild.io/github.com/hidu/hsync)
 
 ## useage
-###server slide:
+###server:
 >hsync -d hsyncd.json
 
 ```
@@ -24,7 +24,7 @@ or download from
     ]
 }
 ```
-###client slide:
+###client:
 >hsync hsync.json  
 
 ```

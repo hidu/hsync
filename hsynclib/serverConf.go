@@ -85,7 +85,7 @@ var ConfDemoServer string = `
 {
     "addr":":8700",
     "home":"./",
-    "token":"abc",
+    "token":"hsynctoken201412",
     "deploy":[
         {"from":"a/","to":"d/"}
     ]
