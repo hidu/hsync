@@ -97,6 +97,27 @@ func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
 	err = fileGetStat(fullName, result)
 	return err
 }
+func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
+	if suc, err := trans.checkToken(arg); !suc {
+		return err
+	}
+	glog.Infoln("Call FileReName", arg.MyFile.Name, "->", arg.FileName)
+	fullName, relName, err := trans.cleanFileName(arg.FileName)
+	if err != nil {
+		return err
+	}
+	fullNameOld, relNameOld, err := trans.cleanFileName(arg.MyFile.Name)
+	if err != nil {
+		return err
+	}
+	err = os.Rename(fullNameOld, fullName)
+	if err == nil {
+		trans.addEvent(relName, EVENT_UPDATE)
+		trans.addEvent(relNameOld, EVENT_DELETE)
+		*result = 1
+	}
+	return err
+}
 
 func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 	if suc, err := trans.checkToken(arg); !suc {

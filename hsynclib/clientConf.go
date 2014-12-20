@@ -2,6 +2,7 @@ package hsync
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/golang/glog"
 	"io/ioutil"
 	"path/filepath"
@@ -46,9 +47,13 @@ func LoadClientConf(name string) (conf *ClientConf, err error) {
 			conf.Home = filepath.Join(conf.ConfDir, conf.Home)
 		}
 		conf.Home = filepath.Clean(conf.Home)
+
+		if conf.ServerAddr == "" {
+			err = fmt.Errorf("miss server addr")
+		}
 	}
 
-	if conf != nil {
+	if err == nil && conf != nil {
 		conf.ignoreCr, err = NewCongRegexp(conf.Ignore)
 	}
 

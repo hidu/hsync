@@ -53,7 +53,7 @@ func main() {
 
 	confInfo, err := os.Stat(confName)
 	if err != nil || confInfo.IsDir() {
-		glog.Exitln("hsync conf not")
+		glog.Exitf("hsync conf [%s] not exists!", confName)
 	}
 
 	if *d {

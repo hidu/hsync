@@ -15,17 +15,25 @@ type HsyncClient struct {
 	client          *rpc.Client
 	conf            *ClientConf
 	watcher         *fsnotify.Watcher
-	events          map[string]EventType
+	clientEvents    []*ClientEvent
 	mu              sync.RWMutex
 	conncetTryTimes int
+	reNameEvent     *fsnotify.Event
 }
 type EventType int
 
 const (
 	EVENT_UPDATE = 1
 	EVENT_DELETE = 2
-	EVENT_CHECK  = 3
+	EVENT_RENAME = 3
+	EVENT_CHECK  = 9
 )
+
+type ClientEvent struct {
+	Name      string
+	EventType EventType
+	NameTo    string
+}
 
 func NewHsyncClient(confName string) (*HsyncClient, error) {
 	conf, err := LoadClientConf(confName)
@@ -33,8 +41,8 @@ func NewHsyncClient(confName string) (*HsyncClient, error) {
 		return nil, err
 	}
 	hs := &HsyncClient{
-		conf:   conf,
-		events: make(map[string]EventType),
+		conf:         conf,
+		clientEvents: make([]*ClientEvent, 0),
 	}
 	return hs, nil
 }
@@ -101,7 +109,7 @@ checkConnect:
 func (hc *HsyncClient) RemoteVersion() string {
 	var serverVersion string
 	hc.Call("Trans.Version", version, &serverVersion)
-	glog.Infoln("remote version is", serverVersion)
+	glog.Infoln("remote server version is", serverVersion)
 	return serverVersion
 }
 
@@ -149,10 +157,31 @@ func (hc *HsyncClient) RemoteDel(name string) error {
 	}
 	var reply int
 	err = hc.Call("Trans.DeleteFile", hc.NewArgs(relPath, nil), &reply)
-	if reply != 0 {
+	if reply == 1 {
 		glog.Infof("Delete [%s] suc", relPath)
 	} else {
 		glog.Infof("Delete [%s] failed,err=", relPath, err)
+	}
+	return err
+}
+func (hc *HsyncClient) RemoteReName(name string, nameOld string) error {
+	_, relName, err := hc.CheckPath(name)
+	if err != nil {
+		return err
+	}
+	_, relNameOld, err := hc.CheckPath(nameOld)
+	if err != nil {
+		return err
+	}
+	f := &MyFile{Name: relNameOld}
+	var reply int
+	err = hc.Call("Trans.FileReName", hc.NewArgs(relName, f), &reply)
+	if reply == 1 {
+		glog.Infof("Rename [%s]->[%s] suc", relNameOld, relName)
+	} else {
+		glog.Infof("Rename [%s]->[%s] failed,err=%v", relNameOld, relName, err)
+		hc.addEvent(relName, EVENT_CHECK, "")
+		hc.addEvent(relNameOld, EVENT_DELETE, "")
 	}
 	return err
 }
@@ -202,7 +231,7 @@ func (hc *HsyncClient) Watch() (err error) {
 			case event := <-hc.watcher.Events:
 				hc.eventHander(event)
 			case err := <-hc.watcher.Errors:
-				glog.Warningln("error:", err)
+				glog.Warningln("fswatch error:", err)
 			}
 		}
 	}()
@@ -236,38 +265,35 @@ func (hc *HsyncClient) addWatch(dir string) {
 	})
 }
 
-func (hc *HsyncClient) addEvent(fileName string, eventType EventType) {
-	hc.mu.Lock()
-	defer hc.mu.Unlock()
-	hc.events[fileName] = eventType
+func (hc *HsyncClient) addEvent(fileName string, eventType EventType, nameTo string) {
+	hc.clientEvents = append(hc.clientEvents, &ClientEvent{Name: fileName, EventType: eventType, NameTo: nameTo})
 }
 
 func (hc *HsyncClient) eventLoop() {
-	elist := make(map[string]EventType)
 	eventHander := func() {
-		glog.V(2).Info("event buffer length:", len(hc.events))
-		if len(hc.events) == 0 {
+		glog.V(2).Info("event buffer length:", len(hc.clientEvents))
+		if len(hc.clientEvents) == 0 {
 			return
 		}
 		hc.mu.Lock()
-		for k, v := range hc.events {
-			elist[k] = v
-			delete(hc.events, k)
-		}
+		elist := make([]*ClientEvent, len(hc.clientEvents))
+		copy(elist, hc.clientEvents)
+		hc.clientEvents = make([]*ClientEvent, 0)
 		hc.mu.Unlock()
-		if len(elist) == 0 {
-			return
-		}
-		for fileName, v := range elist {
-			switch v {
+
+		for _, ev := range elist {
+			switch ev.EventType {
 			case EVENT_UPDATE:
-				hc.RemoteSaveFile(fileName)
+				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
-				hc.CheckOrSend(fileName)
+				hc.CheckOrSend(ev.Name)
 			case EVENT_DELETE:
-				hc.RemoteDel(fileName)
+				hc.RemoteDel(ev.Name)
+			case EVENT_RENAME:
+				hc.RemoteReName(ev.Name, ev.NameTo)
+			default:
+				glog.Warningln("unknow event:", ev)
 			}
-			delete(elist, fileName)
 		}
 	}
 
@@ -293,7 +319,7 @@ func (hc *HsyncClient) sync() {
 			}
 			return nil
 		}
-		hc.addEvent(absPath, EVENT_CHECK)
+		hc.addEvent(absPath, EVENT_CHECK, "")
 		return nil
 	})
 	glog.Infoln("sync scan done", err)
@@ -301,33 +327,42 @@ func (hc *HsyncClient) sync() {
 
 func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
-	absPath, relPath, err := hc.CheckPath(event.Name)
-	if err != nil || hc.conf.IsIgnore(relPath) {
-		glog.V(2).Infoln("ignore ", relPath)
+	absPath, relName, err := hc.CheckPath(event.Name)
+	if err != nil || hc.conf.IsIgnore(relName) {
+		glog.V(2).Infoln("ignore ", relName)
 		return
 	}
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
 
 	if event.Op&fsnotify.Create == fsnotify.Create {
-		hc.addEvent(absPath, EVENT_UPDATE)
+		if hc.reNameEvent != nil {
+			absPathOld, relNameOld, _ := hc.CheckPath(hc.reNameEvent.Name)
+			hc.reNameEvent = nil
+			hc.watcher.Remove(absPathOld)
+			glog.V(2).Infoln("event rename", relNameOld, "->", relName)
+
+			hc.addEvent(absPath, EVENT_RENAME, absPathOld)
+		} else {
+			hc.addEvent(absPath, EVENT_UPDATE, "")
+		}
 		stat, err := os.Stat(absPath)
-		if err != nil && stat.IsDir() {
+		if err == nil && stat.IsDir() {
 			hc.addWatch(absPath)
 		}
 	}
 
 	if event.Op&fsnotify.Write == fsnotify.Write {
-		hc.addEvent(absPath, EVENT_UPDATE)
+		hc.addEvent(absPath, EVENT_UPDATE, "")
 	}
 
 	if event.Op&fsnotify.Remove == fsnotify.Remove {
-		hc.addEvent(absPath, EVENT_DELETE)
+		hc.addEvent(absPath, EVENT_DELETE, "")
 		hc.watcher.Remove(absPath)
 	}
 
-	//@todo
 	if event.Op&fsnotify.Rename == fsnotify.Rename {
-		hc.addEvent(absPath, EVENT_DELETE)
-		hc.watcher.Remove(absPath)
+		hc.reNameEvent = &event
 	}
 }
 
