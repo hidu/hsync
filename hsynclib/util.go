@@ -79,9 +79,10 @@ func checkDir(dir string, mode os.FileMode) error {
 var _copyrw sync.Mutex
 
 func copyFile(dest, src string) (err error) {
+	glog.V(2).Infof("copyFile [%s] -> [%s]", src, dest)
 	if glog.V(2) {
 		defer func() {
-			glog.Warningln("copy file ", src, "->", dest, "err=", err)
+			glog.Warningln("copyFile ", src, "->", dest, "err=", err)
 		}()
 	}
 	f, err := os.Open(src)
@@ -91,28 +92,46 @@ func copyFile(dest, src string) (err error) {
 	defer f.Close()
 
 	info, err := f.Stat()
-	if err != nil || info.IsDir() {
-		return fmt.Errorf("src is dir")
-	}
-
-	_, err = os.Stat(filepath.Dir(src))
 	if err != nil {
 		return err
 	}
-	destDir := filepath.Dir(dest)
-	if _, err := os.Stat(destDir); os.IsNotExist(err) {
-		err = checkDir(destDir, 0755)
+	if info.IsDir() {
+		_, err := os.Stat(dest)
+		if os.IsNotExist(err) {
+			err = os.MkdirAll(dest, info.Mode())
+			if err != nil {
+				return err
+			}
+		}
+		err = filepath.Walk(src, func(fileName string, info os.FileInfo, err error) error {
+			if !info.IsDir() {
+				rel, _ := filepath.Rel(src, fileName)
+
+				pathDest := filepath.Join(dest, rel)
+				return copyFile(pathDest, fileName)
+			}
+			return nil
+		})
+	} else {
+		_, err = os.Stat(filepath.Dir(src))
 		if err != nil {
 			return err
 		}
+		destDir := filepath.Dir(dest)
+		if _, err := os.Stat(destDir); os.IsNotExist(err) {
+			err = checkDir(destDir, 0755)
+			if err != nil {
+				return err
+			}
+		}
+		_copyrw.Lock()
+		defer _copyrw.Unlock()
+		var d *os.File
+		d, err = os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
+		defer d.Close()
+		d.Truncate(0)
+		_, err = io.Copy(d, f)
 	}
-	_copyrw.Lock()
-	defer _copyrw.Unlock()
-
-	d, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
-	defer d.Close()
-	d.Truncate(0)
-	_, err = io.Copy(d, f)
 	return err
 }
 

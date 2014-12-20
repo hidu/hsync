@@ -1,6 +1,7 @@
 package hsync
 
 import (
+	"fmt"
 	"github.com/golang/glog"
 	"gopkg.in/fsnotify.v1"
 	"net/rpc"
@@ -35,6 +36,10 @@ type ClientEvent struct {
 	NameTo    string
 }
 
+func (ce *ClientEvent) AsKey() string {
+	return fmt.Sprintf("%s_%d_%s", ce.Name, ce.EventType, ce.NameTo)
+}
+
 func NewHsyncClient(confName string) (*HsyncClient, error) {
 	conf, err := LoadClientConf(confName)
 	if err != nil {
@@ -48,9 +53,12 @@ func NewHsyncClient(confName string) (*HsyncClient, error) {
 }
 
 func (hc *HsyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
+	if myFile != nil {
+		myFile.Name = filepath.ToSlash(myFile.Name)
+	}
 	return &RpcArgs{
 		Token:    hc.conf.Token,
-		FileName: fileName,
+		FileName: filepath.ToSlash(fileName),
 		MyFile:   myFile,
 	}
 }
@@ -281,7 +289,16 @@ func (hc *HsyncClient) eventLoop() {
 		hc.clientEvents = make([]*ClientEvent, 0)
 		hc.mu.Unlock()
 
+		eventCache := make(map[string]int)
+
 		for _, ev := range elist {
+			cacheKey := ev.AsKey()
+			if _, has := eventCache[cacheKey]; has {
+				glog.Infoln("same event in loop,skip", cacheKey)
+				continue
+			}
+			eventCache[cacheKey] = 1
+
 			switch ev.EventType {
 			case EVENT_UPDATE:
 				hc.RemoteSaveFile(ev.Name)
@@ -350,6 +367,8 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 		if err == nil && stat.IsDir() {
 			hc.addWatch(absPath)
 		}
+		//rename event emit [rename->create->write], so just return
+		return
 	}
 
 	if event.Op&fsnotify.Write == fsnotify.Write {

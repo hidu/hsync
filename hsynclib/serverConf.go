@@ -10,11 +10,12 @@ import (
 )
 
 type ServerConf struct {
-	Addr    string              `json:"addr"`
-	Home    string              `json:"home"`
-	Token   string              `json:"token"`
-	Deploy  []*ServerConfDeploy `json:"deploy"`
-	ConfDir string
+	Addr      string              `json:"addr"`
+	Home      string              `json:"home"`
+	Token     string              `json:"token"`
+	Deploy    []*ServerConfDeploy `json:"deploy"`
+	ConfDir   string
+	DeployCmd string `json:"deployCmd"`
 }
 
 type ServerConfDeploy struct {
@@ -88,6 +89,7 @@ var ConfDemoServer string = `
     "token":"hsynctoken201412",
     "deploy":[
         {"from":"a/","to":"d/"}
-    ]
+    ],
+    "deployCmd":""
 }
 `

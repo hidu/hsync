@@ -82,6 +82,10 @@ func (trans *Trans) checkToken(arg *RpcArgs) (bool, error) {
 		glog.Warningln("token not match")
 		return false, fmt.Errorf("token not match")
 	}
+	arg.FileName = filepath.Clean(arg.FileName)
+	if arg.MyFile != nil && arg.MyFile.Name != "" {
+		arg.MyFile.Name = filepath.Clean(arg.MyFile.Name)
+	}
 	return true, nil
 }
 
@@ -203,7 +207,7 @@ func (trans *Trans) eventLoop() {
 		if len(deployTo) > 0 {
 			if et == EVENT_UPDATE {
 				for _, to := range deployTo {
-					copyFile(to, relName)
+					trans.server.deploy(to, relName)
 				}
 			} else if et == EVENT_DELETE {
 
@@ -278,8 +282,9 @@ func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 		if err != nil {
 			return nil, err
 		}
+		defer my.Close()
 		f.Index = index
-		f.Total = int64(math.Ceil(float64(stat.Size) / float64(TRANS_MAX_LENGTH)))
+		f.Total = int64(math.Max(math.Ceil(float64(stat.Size)/float64(TRANS_MAX_LENGTH)), 1)) //fix 0 bit size
 		var data []byte = make([]byte, TRANS_MAX_LENGTH)
 		n, err := my.ReadAt(data, f.Pos)
 		if err != nil && err != io.EOF {
