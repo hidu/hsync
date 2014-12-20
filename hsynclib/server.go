@@ -1,6 +1,7 @@
 package hsync
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/golang/glog"
 	"net"
@@ -8,6 +9,8 @@ import (
 	"net/rpc"
 	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 )
 
 type HsyncServer struct {
@@ -27,6 +30,8 @@ func NewHsyncServer(confName string) (*HsyncServer, error) {
 	server := &HsyncServer{
 		conf: conf,
 	}
+	reg := regexp.MustCompile(`\s+`)
+	server.deployCmdArgs = reg.Split(strings.TrimSpace(conf.DeployCmd), -1)
 	return server, nil
 }
 
@@ -44,14 +49,24 @@ func (server *HsyncServer) Start() {
 
 func (server *HsyncServer) deploy(dst, src string) {
 	var err error
-	if len(server.deployCmdArgs) == 0 {
-		err = copyFile(dst, src)
-	} else {
+	err = copyFile(dst, src)
+	if err == nil {
 		cmdArgs := make([]string, len(server.deployCmdArgs)-1)
 		copy(cmdArgs, server.deployCmdArgs[1:])
+
 		cmdArgs = append(cmdArgs, dst)
+
+		cmdArgs = append(cmdArgs, src)
 		cmd := exec.Command(server.deployCmdArgs[0], cmdArgs...)
-		err = cmd.Start()
+
+		var out bytes.Buffer
+		cmd.Stdout = &out
+
+		var outErr bytes.Buffer
+		cmd.Stderr = &outErr
+
+		err = cmd.Run()
+		glog.V(2).Infoln("deploy stdOut:", out.String(), "stdErrOut:", outErr.String(), "err=", err)
 	}
 	glog.Infof("deploy [%s]->[%s],err=%v", src, dst, err)
 }

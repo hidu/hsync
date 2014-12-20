@@ -26,8 +26,8 @@ type EventType int
 const (
 	EVENT_UPDATE = 1
 	EVENT_DELETE = 2
-	EVENT_RENAME = 3
-	EVENT_CHECK  = 9
+	EVENT_CHECK  = 3
+	EVENT_RENAME = 4
 )
 
 type ClientEvent struct {
@@ -372,7 +372,16 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	}
 
 	if event.Op&fsnotify.Write == fsnotify.Write {
-		hc.addEvent(absPath, EVENT_UPDATE, "")
+		stat, err := os.Stat(absPath)
+		if err != nil {
+			glog.Warningln("get file stat failed,err=", err, "event=", event)
+			return
+		}
+		if stat.Size() > 102400 {
+			hc.addEvent(absPath, EVENT_CHECK, "")
+		} else {
+			hc.addEvent(absPath, EVENT_UPDATE, "")
+		}
 	}
 
 	if event.Op&fsnotify.Remove == fsnotify.Remove {
