@@ -23,7 +23,6 @@ func init() {
 	df := flag.Usage
 	flag.Usage = func() {
 		df()
-		flag.PrintDefaults()
 		fmt.Fprintln(os.Stderr, "\n  sync dir, https://github.com/hidu/hsync/")
 		fmt.Fprintln(os.Stderr, "  as client:", os.Args[0], "   [hsync.json]")
 		fmt.Fprintln(os.Stderr, "  as server:", os.Args[0], "-d [hsyncd.json]")
