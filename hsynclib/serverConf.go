@@ -38,6 +38,7 @@ func LoadServerConf(name string) (conf *ServerConf, err error) {
 			conf.Home = filepath.Join(conf.ConfDir, conf.Home)
 		}
 		conf.Home = filepath.Clean(conf.Home)
+		conf.DeployCmd=strings.TrimSpace(strings.Replace(conf.DeployCmd,"{pwd}",conf.ConfDir,-1))
 		conf.init()
 	}
 	if err == nil {

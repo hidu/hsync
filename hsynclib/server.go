@@ -57,8 +57,12 @@ func (server *HsyncServer) deploy(dst, src string) {
 		cmdArgs = append(cmdArgs, dst)
 
 		cmdArgs = append(cmdArgs, src)
+		
+		cmdArgs = append(cmdArgs, "update")
+		
 		cmd := exec.Command(server.deployCmdArgs[0], cmdArgs...)
-
+		cmd.Dir=server.conf.Home
+		
 		var out bytes.Buffer
 		cmd.Stdout = &out
 
