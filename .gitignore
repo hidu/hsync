@@ -23,7 +23,7 @@ _testmain.go
 *.exe
 *.test
 *.prof
-data_*
-data
+/data*
+
 hsync_*
 tmp
