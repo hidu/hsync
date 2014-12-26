@@ -1,0 +1,13 @@
+
+{
+    "addr":":8700",
+    "home":"./data/",
+    "token":"hsyncTokenDemo@20141226",
+    "deploy":[
+        {"from":"js/","to":"backup/js/"},
+        {"from":"js/","to":"../webroot/js/"},
+        {"from":"css/","to":"../webroot/css/"}
+    ],
+    "deployCmd":"bash {pwd}/deploy.sh"
+}
+

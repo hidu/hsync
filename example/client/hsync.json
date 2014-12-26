@@ -1,0 +1,9 @@
+{
+    "server":"127.0.0.1:8700",
+    "home":"./data/",
+    "token":"hsyncTokenDemo@20141226",
+    "ignore":[
+        "a_ignore/b",
+        "d_ignore/*"
+    ]
+}
