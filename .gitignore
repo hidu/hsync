@@ -24,6 +24,6 @@ _testmain.go
 *.test
 *.prof
 /data*
-
+example/*
 hsync_*
 tmp
