@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var version string = "0.2"
+var version string = "0.2.1"
 
 func GetVersion() string {
 	return version

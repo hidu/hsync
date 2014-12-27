@@ -111,6 +111,9 @@ checkConnect:
 		hc.client = nil
 		goto checkConnect
 	}
+	if err != nil {
+		glog.Warningln("Call", method, "failed,", err)
+	}
 	return err
 }
 
@@ -122,6 +125,25 @@ func (hc *HsyncClient) RemoteVersion() string {
 }
 
 func (hc *HsyncClient) RemoteSaveFile(absPath string) error {
+	return hc.remoteSaveFile(absPath, nil)
+}
+
+func (hc *HsyncClient) RemoteFileTruncate(absPath string) error {
+	absName, relName, err := hc.CheckPath(absPath)
+	if err != nil {
+		return err
+	}
+	f, err := fileGetMyFileStat(absName)
+	if err != nil {
+		return err
+	}
+	f.Name = relName
+	var reply int64 = -1
+	err = hc.Call("Trans.FileTruncate", hc.NewArgs(relName, f), &reply)
+	return err
+}
+
+func (hc *HsyncClient) remoteSaveFile(absPath string, ignoreParts map[int64]int) error {
 	absName, relName, err := hc.CheckPath(absPath)
 	if err != nil {
 		return err
@@ -133,17 +155,29 @@ sendSlice:
 		glog.Warningf("Send FIle [%s] failed,get file failed,err=%v", relName, err)
 		return err
 	}
+	isNotDone := f.Total > 1 && index+1 < f.Total
+
+	logMsg := fmt.Sprintf("Send File [%s] [%3d / %d]", relName, index+1, f.Total)
+
+	if isNotDone && ignoreParts != nil {
+		if _, has := ignoreParts[index]; has {
+			glog.Infoln(logMsg, "Skip")
+			index++
+			goto sendSlice
+		}
+	}
+
 	f.Name = relName
 	var reply int
 	err = hc.Call("Trans.CopyFile", hc.NewArgs(relName, f), &reply)
 	if reply == 1 {
-		glog.Infof("Send File [%s] [%d/%d] suc", relName, index+1, f.Total)
-		if f.Total > 1 && index+1 < f.Total {
+		glog.Infoln(logMsg, "Suc")
+		if isNotDone {
 			index++
 			goto sendSlice
 		}
 	} else {
-		glog.Warningf("Send File [%s] [%d/%d] failed,err:%v", relName, index+1, f.Total, err)
+		glog.Warningln(logMsg, "failed,err=", err)
 	}
 
 	return err
@@ -155,6 +189,15 @@ func (hc *HsyncClient) RemoteGetStat(name string) (stat *FileStat, err error) {
 		return nil, err
 	}
 	err = hc.Call("Trans.FileStat", hc.NewArgs(relName, nil), &stat)
+	return
+}
+
+func (hc *HsyncClient) RemoteGetStatSlice(name string) (stat *FileStatSlice, err error) {
+	_, relName, err := hc.CheckPath(name)
+	if err != nil {
+		return nil, err
+	}
+	err = hc.Call("Trans.FileStatSlice", hc.NewArgs(relName, nil), &stat)
 	return
 }
 
@@ -209,16 +252,48 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 		return
 	}
 	var localStat FileStat
-	err = fileGetStat(absPath, &localStat)
+	err = fileGetStat(absPath, &localStat, true)
 	if err != nil {
 		return
 	}
 	if !remoteStat.Exists || localStat.Md5 != remoteStat.Md5 {
-		err = hc.RemoteSaveFile(absPath)
+		if localStat.Size/TRANS_MAX_LENGTH < 3 {
+			err = hc.RemoteSaveFile(absPath)
+		} else {
+			err = hc.flashSend(absPath)
+		}
 	} else {
 		glog.Infoln("Not Change", relPath)
 	}
 	return
+}
+
+func (hc *HsyncClient) flashSend(absName string) (err error) {
+	absPath, relPath, err := hc.CheckPath(absName)
+	if err != nil {
+		return err
+	}
+	var localStatSlice FileStatSlice
+	err = fileGetStatSlice(absPath, &localStatSlice)
+	if err != nil {
+		return err
+	}
+	remoteStatSlice, err := hc.RemoteGetStatSlice(relPath)
+	if err != nil {
+		return err
+	}
+	ignoreParts := make(map[int64]int)
+	for index, statPart := range localStatSlice.Parts {
+		if int64(index)+1 > remoteStatSlice.Total || statPart.Md5 != remoteStatSlice.Parts[index].Md5 {
+		} else {
+			ignoreParts[int64(index)] = 1
+		}
+	}
+	err = hc.remoteSaveFile(absPath, ignoreParts)
+	//	if err == nil && localStatSlice.Size < remoteStatSlice.Size {
+	//		err = hc.RemoteFileTruncate(absPath)
+	//	}
+	return err
 }
 
 func (hc *HsyncClient) Watch() (err error) {
@@ -294,7 +369,7 @@ func (hc *HsyncClient) eventLoop() {
 		for _, ev := range elist {
 			cacheKey := ev.AsKey()
 			if _, has := eventCache[cacheKey]; has {
-				glog.Infoln("same event in loop,skip", cacheKey)
+				glog.V(2).Infoln("same event in loop,skip", cacheKey)
 				continue
 			}
 			eventCache[cacheKey] = 1

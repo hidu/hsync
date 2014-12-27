@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -39,6 +38,18 @@ type RpcArgs struct {
 	Token    string
 	FileName string
 	MyFile   *MyFile
+}
+
+type FileStatSlice struct {
+	Size  int64           `json:"size"`
+	Total int64           `json:"total"`
+	Parts []*FileStatPart `json:"parts"`
+}
+
+type FileStatPart struct {
+	Start int64  `json:"start"`
+	Len   int64  `json:"len"`
+	Md5   string `json:"md5"`
 }
 
 func (stat *FileStat) IsDir() bool {
@@ -98,7 +109,7 @@ func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
 	if err != nil {
 		return err
 	}
-	err = fileGetStat(fullName, result)
+	err = fileGetStat(fullName, result, true)
 	return err
 }
 func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
@@ -153,18 +164,24 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 			data = myFile.Data
 		}
 
-		if myFile.Index == 0 {
-			err = ioutil.WriteFile(fullName, data, myFile.Stat.FileMode)
-		} else {
-			var f *os.File
-			f, err = os.OpenFile(fullName, os.O_RDWR, myFile.Stat.FileMode)
+		var f *os.File
+		f, err = os.OpenFile(fullName, os.O_RDWR|os.O_CREATE, myFile.Stat.FileMode)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		n, err := f.WriteAt(data, myFile.Pos)
+		if err != nil {
+			return err
+		}
+		if n != len(data) {
+			return fmt.Errorf("part of the data wrote failed,expect len=%d,now len=%d", len(data), n)
+		}
+		if myFile.Total == 0 || myFile.Index+1 == myFile.Total {
+			err = f.Truncate(myFile.Stat.Size)
 			if err != nil {
 				return err
 			}
-			defer f.Close()
-			_, err = f.WriteAt(data, myFile.Pos)
-		}
-		if myFile.Total == 0 || myFile.Index+1 == myFile.Total {
 			trans.addEvent(relName, EVENT_UPDATE)
 		}
 	}
@@ -196,6 +213,44 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 	}
 	*result = 1
 	trans.addEvent(relName, EVENT_DELETE)
+	return err
+}
+
+func (trans *Trans) FileStatSlice(arg *RpcArgs, result *FileStatSlice) (err error) {
+	if suc, err := trans.checkToken(arg); !suc {
+		return err
+	}
+	glog.Infoln("Call FileStatSlice", arg.FileName)
+	fullName, _, err := trans.cleanFileName(arg.FileName)
+	if err != nil {
+		return err
+	}
+	err = fileGetStatSlice(fullName, result)
+	return err
+}
+
+func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
+	if suc, err := trans.checkToken(arg); !suc {
+		return err
+	}
+	glog.Infoln("Call FileStatSlice", arg.FileName)
+	fullName, _, err := trans.cleanFileName(arg.FileName)
+	if err != nil {
+		return err
+	}
+	f, err := os.Open(fullName)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	err = f.Truncate(arg.MyFile.Stat.Size)
+	if err == nil {
+		info, err := f.Stat()
+		if err == nil {
+			*result = info.Size()
+		}
+	}
 	return err
 }
 
@@ -244,7 +299,7 @@ func (trans *Trans) eventLoop() {
 	glog.Error("trans loop exit")
 }
 
-func fileGetStat(name string, stat *FileStat) error {
+func fileGetStat(name string, stat *FileStat, md5 bool) error {
 	info, err := os.Stat(name)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -257,7 +312,7 @@ func fileGetStat(name string, stat *FileStat) error {
 	stat.Mtime = info.ModTime()
 	stat.Size = info.Size()
 	stat.FileMode = info.Mode()
-	if !stat.IsDir() {
+	if !stat.IsDir() && md5 {
 		stat.Md5 = FileMd5(name)
 	}
 	return nil
@@ -267,7 +322,12 @@ const TRANS_MAX_LENGTH = 10485760 //10Mb
 
 func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 	stat := new(FileStat)
-	err := fileGetStat(absPath, stat)
+	md5 := false
+	if index == 0 {
+		md5 = true
+	}
+
+	err := fileGetStat(absPath, stat, md5)
 	if err != nil {
 		return nil, err
 	}
@@ -294,4 +354,59 @@ func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 		f.Gzip = true
 	}
 	return f, nil
+}
+
+func fileGetMyFileStat(absPath string) (*MyFile, error) {
+	stat := new(FileStat)
+	err := fileGetStat(absPath, stat, false)
+	if err != nil {
+		return nil, err
+	}
+	f := &MyFile{
+		Name: absPath,
+		Stat: stat,
+	}
+	return f, nil
+}
+
+func fileGetStatSlice(name string, statSlice *FileStatSlice) error {
+	info, err := os.Stat(name)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		} else {
+			return err
+		}
+	}
+	if info.IsDir() {
+		return fmt.Errorf("not file")
+	}
+	my, err := os.Open(name)
+	if err != nil {
+		return err
+	}
+	defer my.Close()
+
+	statSlice.Size = info.Size()
+	statSlice.Total = int64(math.Max(math.Ceil(float64(statSlice.Size)/float64(TRANS_MAX_LENGTH)), 1))
+	statSlice.Parts = make([]*FileStatPart, 0, statSlice.Total)
+	var index int64 = 0
+	var pos int64 = 0
+
+	buf := make([]byte, TRANS_MAX_LENGTH)
+
+	for index < statSlice.Total {
+		n, err := my.ReadAt(buf, pos)
+		if err != nil && err != io.EOF {
+			return err
+		}
+		sp := new(FileStatPart)
+		sp.Start = index * TRANS_MAX_LENGTH
+		sp.Len = int64(n)
+		pos = sp.Start + sp.Len
+		sp.Md5 = ByteMd5(buf[:n])
+		statSlice.Parts = append(statSlice.Parts, sp)
+		index++
+	}
+	return nil
 }
