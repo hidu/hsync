@@ -404,7 +404,7 @@ func (hc *HsyncClient) sync() {
 	err := filepath.Walk(hc.conf.Home, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
 		glog.V(2).Info("sync walk ", relPath)
-		if isIgnore(relPath) {
+		if hc.conf.IsIgnore(relPath) {
 			glog.Infoln("sync ignore", relPath)
 			if info.IsDir() {
 				return filepath.SkipDir
