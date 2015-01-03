@@ -163,7 +163,18 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 		} else {
 			data = myFile.Data
 		}
-
+		info, err := os.Stat(fullName)
+		if err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+		}
+		if !myFile.Stat.IsDir() && info != nil && info.IsDir() {
+			err = os.RemoveAll(fullName)
+			if err != nil {
+				return err
+			}
+		}
 		var f *os.File
 		f, err = os.OpenFile(fullName, os.O_RDWR|os.O_CREATE, myFile.Stat.FileMode)
 		if err != nil {
@@ -207,7 +218,7 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 	if err != nil {
 		return err
 	}
-	err = os.Remove(fullName)
+	err = os.RemoveAll(fullName)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}

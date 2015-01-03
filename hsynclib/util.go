@@ -124,6 +124,9 @@ func copyFile(dest, src string) (err error) {
 				return err
 			}
 		}
+		if !info.Mode().IsDir() {
+			os.RemoveAll(dest)
+		}
 		_copyrw.Lock()
 		defer _copyrw.Unlock()
 		var d *os.File
