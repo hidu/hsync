@@ -44,33 +44,39 @@ func (server *HsyncServer) Start() {
 	if err != nil {
 		glog.Exitln("ListenAndServe,err ", err)
 	}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		glog.Infoln("direct visit", r.RemoteAddr, r.Method, r.UserAgent(), r.Referer())
+		w.Write([]byte("hsyncd is ready (v" + GetVersion() + ")"))
+	})
 	http.Serve(l, nil)
 }
 
 func (server *HsyncServer) deploy(dst, src string) {
 	var err error
 	err = copyFile(dst, src)
+	glog.Infof("deploy Copy [%s]->[%s],err=%v", src, dst, err)
 	if err == nil {
-		cmdArgs := make([]string, len(server.deployCmdArgs)-1)
-		copy(cmdArgs, server.deployCmdArgs[1:])
+		if server.conf.DeployCmd != "" {
+			cmdArgs := make([]string, len(server.deployCmdArgs)-1)
+			copy(cmdArgs, server.deployCmdArgs[1:])
 
-		cmdArgs = append(cmdArgs, dst)
+			cmdArgs = append(cmdArgs, dst)
 
-		cmdArgs = append(cmdArgs, src)
+			cmdArgs = append(cmdArgs, src)
 
-		cmdArgs = append(cmdArgs, "update")
+			cmdArgs = append(cmdArgs, "update")
 
-		cmd := exec.Command(server.deployCmdArgs[0], cmdArgs...)
-		cmd.Dir = server.conf.Home
+			cmd := exec.Command(server.deployCmdArgs[0], cmdArgs...)
+			cmd.Dir = server.conf.Home
 
-		var out bytes.Buffer
-		cmd.Stdout = &out
+			var out bytes.Buffer
+			cmd.Stdout = &out
 
-		var outErr bytes.Buffer
-		cmd.Stderr = &outErr
-
-		err = cmd.Run()
-		glog.V(2).Infoln("deploy stdOut:", out.String(), "stdErrOut:", outErr.String(), "err=", err)
+			var outErr bytes.Buffer
+			cmd.Stderr = &outErr
+			err = cmd.Run()
+			glog.Infof("deployCmd [%s]->[%s],err=%v", src, dst, err)
+			glog.V(2).Infoln("deployCmd", cmdArgs, "deploy stdOut:", out.String(), "stdErrOut:", outErr.String(), "err=", err)
+		}
 	}
-	glog.Infof("deploy [%s]->[%s],err=%v", src, dst, err)
 }

@@ -19,7 +19,9 @@ var ve = flag.Bool("version", false, "show version:"+hsync.GetVersion())
 var demoConf = flag.String("demo_conf", "", "show default conf [client|server]")
 
 func init() {
-	flag.Set("logtostderr", "1")
+	flag.Lookup("alsologtostderr").DefValue = "true"
+	flag.Set("alsologtostderr", "true")
+
 	df := flag.Usage
 	flag.Usage = func() {
 		df()
@@ -31,7 +33,6 @@ func init() {
 
 func main() {
 	flag.Parse()
-
 	if *ve {
 		fmt.Fprintln(os.Stderr, "version:", hsync.GetVersion())
 		os.Exit(0)

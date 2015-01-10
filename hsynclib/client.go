@@ -209,7 +209,7 @@ func (hc *HsyncClient) RemoteDel(name string) error {
 	var reply int
 	err = hc.Call("Trans.DeleteFile", hc.NewArgs(relPath, nil), &reply)
 	if reply == 1 {
-		glog.Infof("Delete [%s] suc", relPath)
+		glog.Info(relPath, "Delete suc")
 	} else {
 		glog.Infof("Delete [%s] failed,err=", relPath, err)
 	}
@@ -263,7 +263,7 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 			err = hc.flashSend(absPath)
 		}
 	} else {
-		glog.Infoln("Not Change", relPath)
+		glog.Infoln(relPath, "Not Change")
 	}
 	return
 }
