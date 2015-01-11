@@ -71,6 +71,7 @@ func (hc *HsyncClient) Connect() error {
 		glog.Warningln("connect err", err)
 		return err
 	}
+
 	glog.Infoln("connect to", hc.conf.ServerAddr, "success")
 	hc.conncetTryTimes = 0
 	hc.client = client
@@ -104,15 +105,25 @@ checkConnect:
 			time.Sleep(1 * time.Second)
 		}
 	}
+	isTimeout := false
+
+	timeout := time.AfterFunc(30*time.Second, func() {
+		glog.Warningln("Call", method, "timeout")
+		isTimeout = true
+		hc.client.Close()
+	})
+
 	err = hc.client.Call(method, args, reply)
 
 	glog.V(2).Infoln("Call", method, err)
-	if err == rpc.ErrShutdown {
+	if err == rpc.ErrShutdown || isTimeout {
 		hc.client = nil
 		goto checkConnect
 	}
 	if err != nil {
 		glog.Warningln("Call", method, "failed,", err)
+	} else {
+		timeout.Stop()
 	}
 	return err
 }
