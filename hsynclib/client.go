@@ -110,7 +110,9 @@ checkConnect:
 	timeout := time.AfterFunc(30*time.Second, func() {
 		glog.Warningln("Call", method, "timeout")
 		isTimeout = true
-		hc.client.Close()
+		if(hc.client!=nil){
+			hc.client.Close()
+		}
 	})
 
 	err = hc.client.Call(method, args, reply)
@@ -365,8 +367,10 @@ func (hc *HsyncClient) addEvent(fileName string, eventType EventType, nameTo str
 
 func (hc *HsyncClient) eventLoop() {
 	eventHander := func() {
-		glog.V(2).Info("event buffer length:", len(hc.clientEvents))
-		if len(hc.clientEvents) == 0 {
+		n:=len(hc.clientEvents)
+		glog.V(2).Info("event buffer length:", n)
+		fmt.Print(n)
+		if n == 0 {
 			return
 		}
 		hc.mu.Lock()
@@ -376,7 +380,8 @@ func (hc *HsyncClient) eventLoop() {
 		hc.mu.Unlock()
 
 		eventCache := make(map[string]int)
-
+		
+		var wg sync.WaitGroup
 		for _, ev := range elist {
 			cacheKey := ev.AsKey()
 			if _, has := eventCache[cacheKey]; has {
@@ -389,7 +394,11 @@ func (hc *HsyncClient) eventLoop() {
 			case EVENT_UPDATE:
 				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
-				hc.CheckOrSend(ev.Name)
+				wg.Add(1)
+				go (func(name string){
+					hc.CheckOrSend(name)
+					wg.Done()
+				})(ev.Name)
 			case EVENT_DELETE:
 				hc.RemoteDel(ev.Name)
 			case EVENT_RENAME:
@@ -398,6 +407,7 @@ func (hc *HsyncClient) eventLoop() {
 				glog.Warningln("unknow event:", ev)
 			}
 		}
+		wg.Wait()
 	}
 
 	ticker := time.NewTicker(1 * time.Second)
@@ -432,7 +442,7 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
 	absPath, relName, err := hc.CheckPath(event.Name)
 	if err != nil || hc.conf.IsIgnore(relName) {
-		glog.V(2).Infoln("ignore ", relName)
+		glog.V(2).Infoln("ignore ", relName,err)
 		return
 	}
 	hc.mu.Lock()

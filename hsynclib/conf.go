@@ -51,6 +51,7 @@ func (cr *ConfRegexp) IsMatch(relName string) bool {
 	relName = strings.TrimLeft(filepath.ToSlash(relName), "/")
 	for _, reg := range cr.regs {
 		if reg.MatchString(relName) {
+			glog.V(2).Infof("match reg:[%s],relName:[%s]",reg.String(),relName)
 			return true
 		}
 	}
