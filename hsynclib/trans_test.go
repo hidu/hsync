@@ -6,7 +6,6 @@ import (
 
 func TestFileGetStatSlice(t *testing.T) {
 	var stat FileStatSlice
-	//	name := "/home/duwei/down/jdk-8u20-linux-x64.rpm"
 	name := "./conf.go"
 	err := fileGetStatSlice(name, &stat)
 	if err != nil {

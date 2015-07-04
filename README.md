@@ -8,8 +8,6 @@ hsync
 go get -u github.com/hidu/hsync
 ```
 
-或直接下载编译好的二进制文件：
-[![Gobuild Download](http://gobuild.io/badge/github.com/hidu/hsync/downloads.svg)](http://gobuild.io/github.com/hidu/hsync)
 
 ## useage
 ###server:
