@@ -253,18 +253,18 @@ func (hc *HsyncClient) RemoteReName(name string, nameOld string) error {
 }
 
 func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
-	atomic.AddUint64(&hc.fileCount,1)
+	id:=atomic.AddUint64(&hc.fileCount,1)
 	absPath, relPath, err := hc.CheckPath(absName)
 	if err != nil {
 		return err
 	}
 	if isIgnore(relPath) {
-		glog.V(2).Infoln("[",hc.fileCount,"] sync ignore", relPath)
+		glog.V(2).Infoln("[",id,"] sync ignore", relPath)
 		return
 	}
 	remoteStat, err := hc.RemoteGetStat(absPath)
 	if err != nil {
-		glog.Warningln("[",hc.fileCount,"] sync getstat failed", err)
+		glog.Warningln("[",id,"] sync getstat failed", err)
 		return
 	}
 	var localStat FileStat
@@ -279,7 +279,7 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 			err = hc.flashSend(absPath)
 		}
 	} else {
-		glog.Infoln("[",hc.fileCount,"]",relPath, "Not Change")
+		glog.Infoln("[",id,"]",relPath, "Not Change")
 	}
 	return
 }
