@@ -1,4 +1,4 @@
-package hsync
+package internal
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -20,6 +21,7 @@ type HsyncClient struct {
 	mu              sync.RWMutex
 	conncetTryTimes int
 	reNameEvent     *fsnotify.Event
+	fileCount 	 uint64
 }
 type EventType int
 
@@ -110,7 +112,7 @@ checkConnect:
 	timeout := time.AfterFunc(30*time.Second, func() {
 		glog.Warningln("Call", method, "timeout")
 		isTimeout = true
-		if(hc.client!=nil){
+		if hc.client != nil {
 			hc.client.Close()
 		}
 	})
@@ -251,17 +253,18 @@ func (hc *HsyncClient) RemoteReName(name string, nameOld string) error {
 }
 
 func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
+	atomic.AddUint64(&hc.fileCount,1)
 	absPath, relPath, err := hc.CheckPath(absName)
 	if err != nil {
 		return err
 	}
 	if isIgnore(relPath) {
-		glog.V(2).Infoln("sync ignore", relPath)
+		glog.V(2).Infoln("[",hc.fileCount,"] sync ignore", relPath)
 		return
 	}
 	remoteStat, err := hc.RemoteGetStat(absPath)
 	if err != nil {
-		glog.Warningln("sync getstat failed", err)
+		glog.Warningln("[",hc.fileCount,"] sync getstat failed", err)
 		return
 	}
 	var localStat FileStat
@@ -276,7 +279,7 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 			err = hc.flashSend(absPath)
 		}
 	} else {
-		glog.Infoln(relPath, "Not Change")
+		glog.Infoln("[",hc.fileCount,"]",relPath, "Not Change")
 	}
 	return
 }
@@ -347,7 +350,6 @@ func (hc *HsyncClient) addWatch(dir string) {
 		if !info.IsDir() {
 			return nil
 		}
-
 		if isIgnore(relPath) || hc.conf.IsIgnore(relPath) {
 			glog.Infoln("ignore watch,path=[", relPath, "]")
 			if info.IsDir() {
@@ -366,8 +368,12 @@ func (hc *HsyncClient) addEvent(fileName string, eventType EventType, nameTo str
 }
 
 func (hc *HsyncClient) eventLoop() {
+
+	//限制同时check的文件数量为100,以避免同时打开大量文件
+	checkChan := make(chan bool, 100)
+
 	eventHander := func() {
-		n:=len(hc.clientEvents)
+		n := len(hc.clientEvents)
 		glog.V(2).Info("event buffer length:", n)
 		fmt.Print(n)
 		if n == 0 {
@@ -380,7 +386,7 @@ func (hc *HsyncClient) eventLoop() {
 		hc.mu.Unlock()
 
 		eventCache := make(map[string]int)
-		
+
 		var wg sync.WaitGroup
 		for _, ev := range elist {
 			cacheKey := ev.AsKey()
@@ -395,8 +401,10 @@ func (hc *HsyncClient) eventLoop() {
 				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
 				wg.Add(1)
-				go (func(name string){
+				checkChan <- true
+				go (func(name string) {
 					hc.CheckOrSend(name)
+					<-checkChan
 					wg.Done()
 				})(ev.Name)
 			case EVENT_DELETE:
@@ -442,7 +450,7 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
 	absPath, relName, err := hc.CheckPath(event.Name)
 	if err != nil || hc.conf.IsIgnore(relName) {
-		glog.V(2).Infoln("ignore ", relName,err)
+		glog.V(2).Infoln("ignore ", relName, err)
 		return
 	}
 	hc.mu.Lock()

@@ -1,4 +1,4 @@
-package hsync
+package internal
 
 import (
 	"testing"

@@ -1,10 +1,9 @@
-package hsync
+package internal
 
 import (
 	"encoding/json"
 	"fmt"
 	"github.com/golang/glog"
-	"io/ioutil"
 	"path/filepath"
 )
 
@@ -34,12 +33,7 @@ func (conf *ClientConf) IsIgnore(relName string) bool {
 }
 
 func LoadClientConf(name string) (conf *ClientConf, err error) {
-	var data []byte
-
-	data, err = ioutil.ReadFile(name)
-	if err == nil {
-		err = json.Unmarshal(data, &conf)
-	}
+	err=loadJSONFile(name,&conf)
 	if err == nil {
 		conf.ConfDir, err = filepath.Abs(name)
 		conf.ConfDir = filepath.Dir(conf.ConfDir)

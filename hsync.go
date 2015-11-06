@@ -10,17 +10,19 @@ import (
 	"flag"
 	"fmt"
 	"github.com/golang/glog"
-	"github.com/hidu/hsync/hsynclib"
+	hsync "github.com/hidu/hsync/internal"
 	"os"
 )
 
 var d = flag.Bool("d", false, "run model,defaul is client")
 var ve = flag.Bool("version", false, "show version:"+hsync.GetVersion())
 var demoConf = flag.String("demo_conf", "", "show default conf [client|server]")
+var deployOnly=flag.Bool("deploy",false,"deploy all files for server.")
 
 func init() {
 	flag.Lookup("alsologtostderr").DefValue = "true"
 	flag.Set("alsologtostderr", "true")
+	glog.OutputStats
 
 	df := flag.Usage
 	flag.Usage = func() {
@@ -40,6 +42,10 @@ func main() {
 	if *demoConf != "" {
 		fmt.Println(hsync.DemoConf(*demoConf))
 		os.Exit(0)
+	}
+	
+	if(*deployOnly){
+	 	*d=true
 	}
 
 	confName := flag.Arg(0)
@@ -61,6 +67,11 @@ func main() {
 		if err != nil {
 			glog.Exitln("start server failed:", err)
 		}
+		if(*deployOnly){
+			server.DeployAll()
+			return
+		}
+		
 		server.Start()
 	} else {
 		client, err := hsync.NewHsyncClient(confName)

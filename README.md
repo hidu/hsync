@@ -48,6 +48,11 @@ if [ "$SRC" == "a/d1" ];then
 fi
 ```
 
+####force deploy all
+>hsync -deploy hsyncd.json
+
+
+
 ###client:
 >hsync hsync.json  
 

@@ -1,4 +1,4 @@
-package hsync
+package internal
 
 import (
 	"github.com/golang/glog"
@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-var version string = "0.2.1"
+var version string = "0.2.2 20151106"
 
 func GetVersion() string {
 	return version
@@ -51,7 +51,7 @@ func (cr *ConfRegexp) IsMatch(relName string) bool {
 	relName = strings.TrimLeft(filepath.ToSlash(relName), "/")
 	for _, reg := range cr.regs {
 		if reg.MatchString(relName) {
-			glog.V(2).Infof("match reg:[%s],relName:[%s]",reg.String(),relName)
+			glog.V(2).Infof("match reg:[%s],relName:[%s]", reg.String(), relName)
 			return true
 		}
 	}
