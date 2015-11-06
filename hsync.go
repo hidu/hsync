@@ -22,7 +22,6 @@ var deployOnly=flag.Bool("deploy",false,"deploy all files for server.")
 func init() {
 	flag.Lookup("alsologtostderr").DefValue = "true"
 	flag.Set("alsologtostderr", "true")
-	glog.OutputStats
 
 	df := flag.Usage
 	flag.Usage = func() {
