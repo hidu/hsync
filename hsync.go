@@ -15,9 +15,10 @@ import (
 )
 
 var d = flag.Bool("d", false, "run model,defaul is client")
+var host = flag.String("h", "", "sync host name")
 var ve = flag.Bool("version", false, "show version:"+hsync.GetVersion())
 var demoConf = flag.String("demo_conf", "", "show default conf [client|server]")
-var deployOnly=flag.Bool("deploy",false,"deploy all files for server.")
+var deployOnly = flag.Bool("deploy", false, "deploy all files for server.")
 
 func init() {
 	flag.Lookup("alsologtostderr").DefValue = "true"
@@ -42,9 +43,9 @@ func main() {
 		fmt.Println(hsync.DemoConf(*demoConf))
 		os.Exit(0)
 	}
-	
-	if(*deployOnly){
-	 	*d=true
+
+	if *deployOnly {
+		*d = true
 	}
 
 	confName := flag.Arg(0)
@@ -66,14 +67,14 @@ func main() {
 		if err != nil {
 			glog.Exitln("start server failed:", err)
 		}
-		if(*deployOnly){
+		if *deployOnly {
 			server.DeployAll()
 			return
 		}
-		
+
 		server.Start()
 	} else {
-		client, err := hsync.NewHsyncClient(confName)
+		client, err := hsync.NewHsyncClient(confName, *host)
 		if err != nil {
 			glog.Exitln("start hsync client failed:", err)
 		}

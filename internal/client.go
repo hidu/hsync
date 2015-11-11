@@ -21,7 +21,8 @@ type HsyncClient struct {
 	mu              sync.RWMutex
 	conncetTryTimes int
 	reNameEvent     *fsnotify.Event
-	fileCount 	 uint64
+	fileCount       uint64
+	remoteHost      *ServerHost
 }
 type EventType int
 
@@ -42,7 +43,7 @@ func (ce *ClientEvent) AsKey() string {
 	return fmt.Sprintf("%s_%d_%s", ce.Name, ce.EventType, ce.NameTo)
 }
 
-func NewHsyncClient(confName string) (*HsyncClient, error) {
+func NewHsyncClient(confName string, hostName string) (*HsyncClient, error) {
 	conf, err := LoadClientConf(confName)
 	if err != nil {
 		return nil, err
@@ -50,6 +51,30 @@ func NewHsyncClient(confName string) (*HsyncClient, error) {
 	hs := &HsyncClient{
 		conf:         conf,
 		clientEvents: make([]*ClientEvent, 0),
+	}
+	if hostName == "" && conf.Hosts != nil {
+		for name, h := range conf.Hosts {
+			glog.Infoln("use host name:", name)
+			hs.remoteHost = h
+			break
+		}
+	} else {
+		for name, h := range conf.Hosts {
+			if name == hostName {
+				glog.Infoln("use host name:", name)
+				hs.remoteHost = h
+				break
+			}
+		}
+		if hs.remoteHost == nil {
+			fmt.Println("unknow host name:", hostName)
+			fmt.Println("active hosts:")
+			fmt.Println(conf.activeHostsString())
+			os.Exit(1)
+		}
+	}
+	if hs.remoteHost == nil || hs.remoteHost.Host == "" {
+		glog.Exitln("remote host empty:",hs.remoteHost)
 	}
 	return hs, nil
 }
@@ -59,7 +84,7 @@ func (hc *HsyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
 		myFile.Name = filepath.ToSlash(myFile.Name)
 	}
 	return &RpcArgs{
-		Token:    hc.conf.Token,
+		Token:    hc.remoteHost.Token,
 		FileName: filepath.ToSlash(fileName),
 		MyFile:   myFile,
 	}
@@ -67,14 +92,14 @@ func (hc *HsyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
 
 func (hc *HsyncClient) Connect() error {
 	hc.conncetTryTimes++
-	glog.Infoln("connect to", hc.conf.ServerAddr, "tryTimes:", hc.conncetTryTimes)
-	client, err := RpcDialHTTPPath("tcp", hc.conf.ServerAddr, rpc.DefaultRPCPath, 2*time.Second)
+	glog.Infoln("connect to", hc.remoteHost.Host, "tryTimes:", hc.conncetTryTimes)
+	client, err := RpcDialHTTPPath("tcp", hc.remoteHost.Host, rpc.DefaultRPCPath, 2*time.Second)
 	if err != nil {
 		glog.Warningln("connect err", err)
 		return err
 	}
 
-	glog.Infoln("connect to", hc.conf.ServerAddr, "success")
+	glog.Infoln("connect to", hc.remoteHost.Host, "success")
 	hc.conncetTryTimes = 0
 	hc.client = client
 
@@ -253,18 +278,18 @@ func (hc *HsyncClient) RemoteReName(name string, nameOld string) error {
 }
 
 func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
-	id:=atomic.AddUint64(&hc.fileCount,1)
+	id := atomic.AddUint64(&hc.fileCount, 1)
 	absPath, relPath, err := hc.CheckPath(absName)
 	if err != nil {
 		return err
 	}
 	if isIgnore(relPath) {
-		glog.V(2).Infoln("[",id,"] sync ignore", relPath)
+		glog.V(2).Infoln("[", id, "] sync ignore", relPath)
 		return
 	}
 	remoteStat, err := hc.RemoteGetStat(absPath)
 	if err != nil {
-		glog.Warningln("[",id,"] sync getstat failed", err)
+		glog.Warningln("[", id, "] sync getstat failed", err)
 		return
 	}
 	var localStat FileStat
@@ -279,7 +304,7 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 			err = hc.flashSend(absPath)
 		}
 	} else {
-		glog.Infoln("[",id,"]",relPath, "Not Change")
+		glog.Infoln("[", id, "]", relPath, "Not Change")
 	}
 	return
 }

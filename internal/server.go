@@ -27,8 +27,8 @@ func NewHsyncServer(confName string) (*HsyncServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	pwd,_:=os.Getwd()
-	glog.Infoln("cwd:",pwd)
+	pwd, _ := os.Getwd()
+	glog.Infoln("cwd:", pwd)
 	server := &HsyncServer{
 		conf: conf,
 	}
@@ -53,14 +53,13 @@ func (server *HsyncServer) Start() {
 	http.Serve(l, nil)
 }
 
-func (server *HsyncServer)DeployAll(){
+func (server *HsyncServer) DeployAll() {
 	glog.Infoln("deploy all start")
-	for _,dc:=range server.conf.Deploy{
-		server.deploy(dc.To,dc.From)
+	for _, dc := range server.conf.Deploy {
+		server.deploy(dc.To, dc.From)
 	}
 	glog.Infoln("deploy all done")
 }
-
 
 func (server *HsyncServer) deploy(dst, src string) {
 	var err error

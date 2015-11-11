@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/golang/glog"
@@ -15,10 +16,9 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
-	"strings"
-	"encoding/json"
 )
 
 func StrMd5(mystr string) string {

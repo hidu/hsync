@@ -5,16 +5,21 @@ import (
 	"fmt"
 	"github.com/golang/glog"
 	"path/filepath"
+	"strings"
 )
 
 type ClientConf struct {
-	ServerAddr string   `json:"server"`
-	Home       string   `json:"home"`
-	Token      string   `json:"token"`
-	Allow      []string `json:"allow"`
-	Ignore     []string `json:"ignore"`
-	ConfDir    string
-	ignoreCr   *ConfRegexp
+	Hosts    map[string]*ServerHost `json:"hosts"`
+	Home     string                 `json:"home"`
+	Allow    []string               `json:"allow"`
+	Ignore   []string               `json:"ignore"`
+	ConfDir  string
+	ignoreCr *ConfRegexp
+}
+
+type ServerHost struct {
+	Host  string `json:"host"`
+	Token string `json:"token"`
 }
 
 func (conf *ClientConf) String() string {
@@ -32,8 +37,17 @@ func (conf *ClientConf) IsIgnore(relName string) bool {
 	return false
 }
 
+func (conf *ClientConf) activeHostsString() string {
+	var hosts []string
+	for name, host := range conf.Hosts {
+		tmp := fmt.Sprintf("%15s : %s", name, host.Host)
+		hosts=append(hosts,tmp)
+	}
+	return strings.Join(hosts, "\n")
+}
+
 func LoadClientConf(name string) (conf *ClientConf, err error) {
-	err=loadJSONFile(name,&conf)
+	err = loadJSONFile(name, &conf)
 	if err == nil {
 		conf.ConfDir, err = filepath.Abs(name)
 		conf.ConfDir = filepath.Dir(conf.ConfDir)
@@ -42,8 +56,8 @@ func LoadClientConf(name string) (conf *ClientConf, err error) {
 		}
 		conf.Home = filepath.Clean(conf.Home)
 
-		if conf.ServerAddr == "" {
-			err = fmt.Errorf("miss server addr")
+		if conf.Hosts == nil {
+			err = fmt.Errorf("miss server hosts")
 		}
 	}
 
@@ -62,11 +76,16 @@ func LoadClientConf(name string) (conf *ClientConf, err error) {
 
 var ConfDemoClient string = `
 {
-    "server":"127.0.0.1:8700",
-    "home":"./",
-    "token":"hsynctoken201412",
+    "hosts":{
+        "default":{
+           "host":"127.0.0.1:8700",
+           "token":"hsyncTokenDemo@20141226"
+        }
+    },
+    "home":"./data/",
     "ignore":[
-        "*.exe"
+        "a_ignore/b",
+        "d_ignore/*"
     ]
 }
 `

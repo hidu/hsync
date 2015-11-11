@@ -1,1 +1,0 @@
-server home dir

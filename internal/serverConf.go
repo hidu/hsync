@@ -24,8 +24,8 @@ type ServerConfDeploy struct {
 }
 
 func LoadServerConf(name string) (conf *ServerConf, err error) {
-	err=loadJSONFile(name,&conf)
-	
+	err = loadJSONFile(name, &conf)
+
 	if err == nil {
 		conf.ConfDir, err = filepath.Abs(name)
 		conf.ConfDir = filepath.Dir(conf.ConfDir)
