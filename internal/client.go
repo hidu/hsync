@@ -395,7 +395,7 @@ func (hc *HsyncClient) addEvent(fileName string, eventType EventType, nameTo str
 func (hc *HsyncClient) eventLoop() {
 
 	//限制同时check的文件数量为100,以避免同时打开大量文件
-	checkChan := make(chan bool, 100)
+//	checkChan := make(chan bool, 100)
 
 	eventHander := func() {
 		n := len(hc.clientEvents)
@@ -407,6 +407,8 @@ func (hc *HsyncClient) eventLoop() {
 		hc.mu.Lock()
 		elist := make([]*ClientEvent, len(hc.clientEvents))
 		copy(elist, hc.clientEvents)
+		//@todo 需要处理一个文件，同时多种事件的情况，比如先删除再立马创建
+		//要保证处理的是有时序的
 		hc.clientEvents = make([]*ClientEvent, 0)
 		hc.mu.Unlock()
 
@@ -425,13 +427,15 @@ func (hc *HsyncClient) eventLoop() {
 			case EVENT_UPDATE:
 				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
-				wg.Add(1)
-				checkChan <- true
-				go (func(name string) {
-					hc.CheckOrSend(name)
-					<-checkChan
-					wg.Done()
-				})(ev.Name)
+				hc.CheckOrSend(ev.Name)
+				//为了时序性 先这样处理
+//				wg.Add(1)
+//				checkChan <- true
+//				go (func(name string) {
+//					hc.CheckOrSend(name)
+//					<-checkChan
+//					wg.Done()
+//				})(ev.Name)
 			case EVENT_DELETE:
 				hc.RemoteDel(ev.Name)
 			case EVENT_RENAME:
