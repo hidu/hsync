@@ -72,12 +72,17 @@ func (w *Watcher) Close() error {
 	w.isClosed = true
 	w.mu.Unlock()
 
+	// copy paths to remove while locked
 	w.mu.Lock()
-	ws := w.watches
+	var pathsToRemove = make([]string, 0, len(w.watches))
+	for name := range w.watches {
+		pathsToRemove = append(pathsToRemove, name)
+	}
 	w.mu.Unlock()
+	// unlock before calling Remove, which also locks
 
 	var err error
-	for name := range ws {
+	for _, name := range pathsToRemove {
 		if e := w.Remove(name); e != nil && err == nil {
 			err = e
 		}
@@ -94,7 +99,8 @@ func (w *Watcher) Add(name string) error {
 	w.mu.Lock()
 	w.externalWatches[name] = true
 	w.mu.Unlock()
-	return w.addWatch(name, noteAllEvents)
+	_, err := w.addWatch(name, noteAllEvents)
+	return err
 }
 
 // Remove stops watching the the named file or directory (non-recursively).
@@ -153,7 +159,8 @@ var keventWaitTime = durationToTimespec(100 * time.Millisecond)
 
 // addWatch adds name to the watched file set.
 // The flags are interpreted as described in kevent(2).
-func (w *Watcher) addWatch(name string, flags uint32) error {
+// Returns the real path to the file which was added, if any, which may be different from the one passed in the case of symlinks.
+func (w *Watcher) addWatch(name string, flags uint32) (string, error) {
 	var isDir bool
 	// Make ./name and name equivalent
 	name = filepath.Clean(name)
@@ -161,7 +168,7 @@ func (w *Watcher) addWatch(name string, flags uint32) error {
 	w.mu.Lock()
 	if w.isClosed {
 		w.mu.Unlock()
-		return errors.New("kevent instance already closed")
+		return "", errors.New("kevent instance already closed")
 	}
 	watchfd, alreadyWatching := w.watches[name]
 	// We already have a watch, but we can still override flags.
@@ -173,17 +180,17 @@ func (w *Watcher) addWatch(name string, flags uint32) error {
 	if !alreadyWatching {
 		fi, err := os.Lstat(name)
 		if err != nil {
-			return err
+			return "", err
 		}
 
 		// Don't watch sockets.
 		if fi.Mode()&os.ModeSocket == os.ModeSocket {
-			return nil
+			return "", nil
 		}
 
 		// Don't watch named pipes.
 		if fi.Mode()&os.ModeNamedPipe == os.ModeNamedPipe {
-			return nil
+			return "", nil
 		}
 
 		// Follow Symlinks
@@ -195,18 +202,26 @@ func (w *Watcher) addWatch(name string, flags uint32) error {
 		if fi.Mode()&os.ModeSymlink == os.ModeSymlink {
 			name, err = filepath.EvalSymlinks(name)
 			if err != nil {
-				return nil
+				return "", nil
+			}
+
+			w.mu.Lock()
+			_, alreadyWatching = w.watches[name]
+			w.mu.Unlock()
+
+			if alreadyWatching {
+				return name, nil
 			}
 
 			fi, err = os.Lstat(name)
 			if err != nil {
-				return nil
+				return "", nil
 			}
 		}
 
 		watchfd, err = syscall.Open(name, openMode, 0700)
 		if watchfd == -1 {
-			return err
+			return "", err
 		}
 
 		isDir = fi.IsDir()
@@ -215,7 +230,7 @@ func (w *Watcher) addWatch(name string, flags uint32) error {
 	const registerAdd = syscall.EV_ADD | syscall.EV_CLEAR | syscall.EV_ENABLE
 	if err := register(w.kq, []int{watchfd}, registerAdd, flags); err != nil {
 		syscall.Close(watchfd)
-		return err
+		return "", err
 	}
 
 	if !alreadyWatching {
@@ -229,6 +244,7 @@ func (w *Watcher) addWatch(name string, flags uint32) error {
 		// Watch the directory if it has not been watched before,
 		// or if it was watched before, but perhaps only a NOTE_DELETE (watchDirectoryFiles)
 		w.mu.Lock()
+
 		watchDir := (flags&syscall.NOTE_WRITE) == syscall.NOTE_WRITE &&
 			(!alreadyWatching || (w.dirFlags[name]&syscall.NOTE_WRITE) != syscall.NOTE_WRITE)
 		// Store flags so this watch can be updated later
@@ -237,11 +253,11 @@ func (w *Watcher) addWatch(name string, flags uint32) error {
 
 		if watchDir {
 			if err := w.watchDirectoryFiles(name); err != nil {
-				return err
+				return "", err
 			}
 		}
 	}
-	return nil
+	return name, nil
 }
 
 // readEvents reads from kqueue and converts the received kevents into
@@ -364,7 +380,8 @@ func (w *Watcher) watchDirectoryFiles(dirPath string) error {
 
 	for _, fileInfo := range files {
 		filePath := filepath.Join(dirPath, fileInfo.Name())
-		if err := w.internalWatch(filePath, fileInfo); err != nil {
+		filePath, err = w.internalWatch(filePath, fileInfo)
+		if err != nil {
 			return err
 		}
 
@@ -399,7 +416,8 @@ func (w *Watcher) sendDirectoryChangeEvents(dirPath string) {
 		}
 
 		// like watchDirectoryFiles (but without doing another ReadDir)
-		if err := w.internalWatch(filePath, fileInfo); err != nil {
+		filePath, err = w.internalWatch(filePath, fileInfo)
+		if err != nil {
 			return
 		}
 
@@ -409,7 +427,7 @@ func (w *Watcher) sendDirectoryChangeEvents(dirPath string) {
 	}
 }
 
-func (w *Watcher) internalWatch(name string, fileInfo os.FileInfo) error {
+func (w *Watcher) internalWatch(name string, fileInfo os.FileInfo) (string, error) {
 	if fileInfo.IsDir() {
 		// mimic Linux providing delete events for subdirectories
 		// but preserve the flags used if currently watching subdirectory
@@ -417,7 +435,7 @@ func (w *Watcher) internalWatch(name string, fileInfo os.FileInfo) error {
 		flags := w.dirFlags[name]
 		w.mu.Unlock()
 
-		flags |= syscall.NOTE_DELETE
+		flags |= syscall.NOTE_DELETE | syscall.NOTE_RENAME
 		return w.addWatch(name, flags)
 	}
 
