@@ -41,7 +41,7 @@ func (conf *ClientConf) activeHostsString() string {
 	var hosts []string
 	for name, host := range conf.Hosts {
 		tmp := fmt.Sprintf("%15s : %s", name, host.Host)
-		hosts=append(hosts,tmp)
+		hosts = append(hosts, tmp)
 	}
 	return strings.Join(hosts, "\n")
 }

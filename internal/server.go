@@ -63,8 +63,10 @@ func (server *HsyncServer) DeployAll() {
 
 func (server *HsyncServer) deploy(dst, src string) {
 	var err error
+    os.Chdir(server.conf.Home)
 	err = copyFile(dst, src)
-	glog.Infof("deploy Copy [%s]->[%s],err=%v", src, dst, err)
+    pwd,_:=os.Getwd()
+	glog.Infof("deploy Copy [%s]->[%s],err=%v,pwd=%s", src, dst, err,pwd)
 	if err == nil {
 		if server.conf.DeployCmd != "" {
 			cmdArgs := make([]string, len(server.deployCmdArgs)-1)

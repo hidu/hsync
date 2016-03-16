@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/hidu/hsync",
-	"GoVersion": "go1.5.2",
+	"GoVersion": "go1.6",
 	"Deps": [
 		{
 			"ImportPath": "github.com/golang/glog",
@@ -8,8 +8,8 @@
 		},
 		{
 			"ImportPath": "gopkg.in/fsnotify.v1",
-			"Comment": "v1.2.8",
-			"Rev": "508915b7500b6e42a87132e4afeb4729cebc7cbb"
+			"Comment": "v1.2.9",
+			"Rev": "8611c35ab31c1c28aa903d33cf8b6e44a399b09e"
 		}
 	]
 }

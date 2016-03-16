@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+    "flag"
 )
 
 type HsyncClient struct {
@@ -405,10 +406,18 @@ func (hc *HsyncClient) addEvent(fileName string, eventType EventType, nameTo str
 	hc.clientEvents = append(hc.clientEvents, &ClientEvent{Name: fileName, EventType: eventType, NameTo: nameTo})
 }
 
-func (hc *HsyncClient) eventLoop() {
 
+var clientThreadNumber int
+func init(){
+	flag.IntVar(&clientThreadNumber,"tr",200,"thread number of launchd  check")
+}
+
+func (hc *HsyncClient) eventLoop() {
+	if clientThreadNumber<1 {
+       glog.Error("sync loop exit")
+    }
 	//限制同时check的文件数量为100,以避免同时打开大量文件
-	checkChan := make(chan bool, 1)
+	checkChan := make(chan bool, clientThreadNumber)
 
 	eventHander := func() {
 		n := len(hc.clientEvents)
@@ -427,16 +436,16 @@ func (hc *HsyncClient) eventLoop() {
 		hc.clientEvents = make([]*ClientEvent, 0)
 		hc.mu.Unlock()
 
-		eventCache := make(map[string]int)
+		eventCache := make(map[string]time.Time)
 
 		var wg sync.WaitGroup
 		for _, ev := range elist {
 			cacheKey := ev.AsKey()
-			if _, has := eventCache[cacheKey]; has {
+			if t, has := eventCache[cacheKey]; has && time.Now().Sub(t).Seconds()<5 {
 				glog.V(2).Infoln("same event in loop,skip", cacheKey)
 				continue
 			}
-			eventCache[cacheKey] = 1
+			eventCache[cacheKey] = time.Now()
 
 			switch ev.EventType {
 			case EVENT_UPDATE:
