@@ -104,7 +104,7 @@ func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
-	glog.Infoln("Call FileStat", arg.FileName)
+	glog.Infoln("trans.FileStat", arg.FileName)
 	fullName, _, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
@@ -116,7 +116,7 @@ func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
-	glog.Infoln("Call FileReName", arg.MyFile.Name, "->", arg.FileName)
+	glog.Infoln("trans.FileReName", arg.MyFile.Name, "->", arg.FileName)
 	fullName, relName, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
@@ -144,14 +144,14 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 
 	defer func() {
 		if err == nil {
-			glog.Infof("receiver file [%s] [%d/%d] suc,size:%d", relName, myFile.Index+1, myFile.Total, len(myFile.Data))
+			glog.Infof("trans.CopyFile receiver file [%s] [%d/%d] suc,size:%d", relName, myFile.Index+1, myFile.Total, len(myFile.Data))
 		} else {
-			glog.Warningf("receiver file [%s] [%d/%d] failed,err:%v", relName, myFile.Index+1, myFile.Total, err)
+			glog.Warningf("trans.CopyFile receiver file [%s] [%d/%d] failed,err:%v", relName, myFile.Index+1, myFile.Total, err)
 		}
 	}()
 
 	if err != nil {
-		return fmt.Errorf("wrong file name")
+		return fmt.Errorf("trans.CopyFile wrong file name,err:%s", err.Error())
 	}
 	if myFile.Stat.IsDir() {
 		err = checkDir(fullName, myFile.Stat.FileMode)
@@ -171,6 +171,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 		}
 		if !myFile.Stat.IsDir() && info != nil && info.IsDir() {
 			err = os.RemoveAll(fullName)
+			glog.Infoln("trans.CopyFile | removeAll (%s) exists and not dir,because source is dir,err=", err)
 			if err != nil {
 				return err
 			}
@@ -186,7 +187,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 			return err
 		}
 		if n != len(data) {
-			return fmt.Errorf("part of the data wrote failed,expect len=%d,now len=%d", len(data), n)
+			return fmt.Errorf("trans.CopyFile part of the data wrote failed,expect len=%d,now len=%d", len(data), n)
 		}
 		if myFile.Total == 0 || myFile.Index+1 == myFile.Total {
 			err = f.Truncate(myFile.Stat.Size)
@@ -204,7 +205,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 }
 
 func (trans *Trans) Version(clientVersion string, v *string) error {
-	glog.Infoln("get version,client version:", clientVersion)
+	glog.Infoln("trans.Version,client version:", clientVersion)
 	*v = version
 	return nil
 }
@@ -213,7 +214,7 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
-	glog.Infoln("Call DeleteFile", arg.FileName)
+	glog.Infoln("trans.DeleteFile", arg.FileName)
 	fullName, relName, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
@@ -231,7 +232,7 @@ func (trans *Trans) FileStatSlice(arg *RpcArgs, result *FileStatSlice) (err erro
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
-	glog.Infoln("Call FileStatSlice", arg.FileName)
+	glog.Infoln("trans.FileStatSlice", arg.FileName)
 	fullName, _, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
@@ -244,7 +245,7 @@ func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
-	glog.Infoln("Call FileStatSlice", arg.FileName)
+	glog.Infoln("trans.FileStatSlice", arg.FileName)
 	fullName, _, err := trans.cleanFileName(arg.FileName)
 	if err != nil {
 		return err
@@ -269,7 +270,7 @@ func (trans *Trans) eventLoop() {
 	elist := make(map[string]EventType)
 	dealEvent := func(relName string, et EventType) {
 		deployTo := trans.server.conf.getDeployTo(relName)
-		glog.V(2).Infoln("deploy", relName, "-->", deployTo)
+		glog.V(2).Infoln("trans.eventLoop deploy", relName, "-->", deployTo)
 		if len(deployTo) > 0 {
 			if et == EVENT_UPDATE {
 				for _, to := range deployTo {
@@ -281,7 +282,7 @@ func (trans *Trans) eventLoop() {
 		}
 	}
 	eventHander := func() {
-		glog.V(2).Info("event buffer length:", len(trans.events))
+		glog.V(2).Info("trans.eventLoop event buffer length:", len(trans.events))
 		if len(trans.events) == 0 {
 			return
 		}
@@ -307,7 +308,7 @@ func (trans *Trans) eventLoop() {
 			eventHander()
 		}
 	}
-	glog.Error("trans loop exit")
+	glog.Error("trans.eventLoop exit")
 }
 
 func fileGetStat(name string, stat *FileStat, md5 bool) error {

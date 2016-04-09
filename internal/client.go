@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"flag"
 	"fmt"
 	"github.com/golang/glog"
 	"gopkg.in/fsnotify.v1"
@@ -11,7 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-    "flag"
 )
 
 type HsyncClient struct {
@@ -75,7 +75,7 @@ func NewHsyncClient(confName string, hostName string) (*HsyncClient, error) {
 		}
 	}
 	if hs.remoteHost == nil || hs.remoteHost.Host == "" {
-		glog.Exitln("remote host empty:",hs.remoteHost)
+		glog.Exitln("remote host empty:", hs.remoteHost)
 	}
 	return hs, nil
 }
@@ -104,8 +104,8 @@ func (hc *HsyncClient) Connect() error {
 	hc.conncetTryTimes = 0
 	hc.client = client
 
-	rv := strings.Split(hc.RemoteVersion()," ")
-	lv:=strings.Split(version," ")
+	rv := strings.Split(hc.RemoteVersion(), " ")
+	lv := strings.Split(version, " ")
 	if rv[0] != lv[0] {
 		glog.Exitln("server version [", rv[0], "] != client version [", lv[0], "]")
 	}
@@ -199,11 +199,11 @@ sendSlice:
 		glog.Warningf("Send FIle [%s] failed,get file failed,err=%v", relName, err)
 		return err
 	}
-	
-	if(f.Stat.IsDir()){
+
+	if f.Stat.IsDir() {
 		go hc.addNewDir(absName)
 	}
-	
+
 	isNotDone := f.Total > 1 && index+1 < f.Total
 
 	logMsg := fmt.Sprintf("Send File [%s] [%3d / %d]", relName, index+1, f.Total)
@@ -255,11 +255,11 @@ func (hc *HsyncClient) RemoteDel(name string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	var reply int
 	err = hc.Call("Trans.DeleteFile", hc.NewArgs(relPath, nil), &reply)
 	if reply == 1 {
-		glog.Info(relPath, "Delete suc")
+		glog.Info(relPath, " Delete suc")
 	} else {
 		glog.Infof("Delete [%s] failed,err=", relPath, err)
 	}
@@ -283,7 +283,7 @@ func (hc *HsyncClient) RemoteReName(name string, nameOld string) error {
 		glog.Infof("Rename [%s]->[%s] failed,err=%v", relNameOld, relName, err)
 		hc.mu.Lock()
 		defer hc.mu.Unlock()
-		
+
 		hc.addEvent(relName, EVENT_CHECK, "")
 		hc.addEvent(relNameOld, EVENT_DELETE, "")
 	}
@@ -401,21 +401,20 @@ func (hc *HsyncClient) addWatch(dir string) {
 	})
 }
 
-
 func (hc *HsyncClient) addEvent(fileName string, eventType EventType, nameTo string) {
 	hc.clientEvents = append(hc.clientEvents, &ClientEvent{Name: fileName, EventType: eventType, NameTo: nameTo})
 }
 
-
 var clientThreadNumber int
-func init(){
-	flag.IntVar(&clientThreadNumber,"tr",200,"thread number of launchd  check")
+
+func init() {
+	flag.IntVar(&clientThreadNumber, "tr", 200, "thread number of launchd  check")
 }
 
 func (hc *HsyncClient) eventLoop() {
-	if clientThreadNumber<1 {
-       glog.Error("sync loop exit")
-    }
+	if clientThreadNumber < 1 {
+		glog.Error("sync loop exit")
+	}
 	//限制同时check的文件数量为100,以避免同时打开大量文件
 	checkChan := make(chan bool, clientThreadNumber)
 
@@ -426,10 +425,10 @@ func (hc *HsyncClient) eventLoop() {
 		if n == 0 {
 			return
 		}
-		
+
 		hc.mu.Lock()
 		elist := make([]*ClientEvent, len(hc.clientEvents))
-		
+
 		copy(elist, hc.clientEvents)
 		//@todo 需要处理一个文件，同时多种事件的情况，比如先删除再立马创建
 		//要保证处理的是有时序的
@@ -441,7 +440,7 @@ func (hc *HsyncClient) eventLoop() {
 		var wg sync.WaitGroup
 		for _, ev := range elist {
 			cacheKey := ev.AsKey()
-			if t, has := eventCache[cacheKey]; has && time.Now().Sub(t).Seconds()<5 {
+			if t, has := eventCache[cacheKey]; has && time.Now().Sub(t).Seconds() < 5 {
 				glog.V(2).Infoln("same event in loop,skip", cacheKey)
 				continue
 			}
@@ -451,8 +450,8 @@ func (hc *HsyncClient) eventLoop() {
 			case EVENT_UPDATE:
 				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
-			
-//				hc.CheckOrSend(ev.Name)
+
+				//				hc.CheckOrSend(ev.Name)
 				//为了时序性 先这样处理
 				wg.Add(1)
 				checkChan <- true
@@ -486,9 +485,9 @@ func (hc *HsyncClient) sync() {
 	hc.addNewDir(hc.conf.Home)
 }
 
-func (hc *HsyncClient)addNewDir(dirPath string){
+func (hc *HsyncClient) addNewDir(dirPath string) {
 	hc.addWatch(dirPath)
-	glog.Infoln("sync",dirPath,"start")
+	glog.Infoln("sync", dirPath, "start")
 	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
 		glog.V(2).Info("sync walk ", relPath)
@@ -505,11 +504,12 @@ func (hc *HsyncClient)addNewDir(dirPath string){
 		hc.mu.Unlock()
 		return nil
 	})
-	glog.Infoln("sync",dirPath,"done",err)
+	glog.Infoln("sync", dirPath, "done", err)
 }
 
 func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
+
 	absPath, relName, err := hc.CheckPath(event.Name)
 	if err != nil || hc.conf.IsIgnore(relName) {
 		glog.V(2).Infoln("ignore ", relName, err)

@@ -127,6 +127,7 @@ func copyFile(dest, src string) (err error) {
 			}
 		}
 		if !info.Mode().IsDir() {
+			glog.Infof("copyFile src [%s] is not dir,dest [%s] removeAll", src, dest)
 			os.RemoveAll(dest)
 		}
 		_copyrw.Lock()

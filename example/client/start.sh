@@ -2,5 +2,5 @@
 
 cd $(dirname $0)
 
-hsync
+hsync -v 2
 # hsync hsyc.json
