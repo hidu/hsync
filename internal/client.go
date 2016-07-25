@@ -300,6 +300,7 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 		glog.V(2).Infoln("[", id, "] sync ignore", relPath)
 		return
 	}
+remote_check:
 	remoteStat, err := hc.RemoteGetStat(absPath)
 	if err != nil {
 		glog.Warningln("[", id, "] sync getstat failed", err)
@@ -309,6 +310,11 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 	err = fileGetStat(absPath, &localStat, true)
 	if err != nil {
 		return
+	}
+	if localStat.IsDir() && remoteStat.Exists && !remoteStat.IsDir() {
+		err = hc.RemoteDel(absPath)
+		glog.Infoln("[", id, "]", relPath, "local_is_dir_but_remte_is_not_dir,delete:", err)
+		goto remote_check
 	}
 	if !remoteStat.Exists || localStat.Md5 != remoteStat.Md5 {
 		if localStat.Size/TRANS_MAX_LENGTH < 3 {
@@ -451,7 +457,7 @@ func (hc *HsyncClient) eventLoop() {
 				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
 
-				//				hc.CheckOrSend(ev.Name)
+				//hc.CheckOrSend(ev.Name)
 				//为了时序性 先这样处理
 				wg.Add(1)
 				checkChan <- true
@@ -555,8 +561,11 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 		hc.watcher.Remove(absPath)
 	}
 
+	//now not support rename
 	if event.Op&fsnotify.Rename == fsnotify.Rename {
-		hc.reNameEvent = &event
+		//		hc.reNameEvent = &event
+		hc.addEvent(absPath, EVENT_DELETE, "")
+		hc.watcher.Remove(absPath)
 	}
 }
 
