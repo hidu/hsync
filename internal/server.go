@@ -23,6 +23,7 @@ func NewHsyncServer(confName string) (*HsyncServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	checkDir(conf.Home, 0755)
 	err = os.Chdir(conf.Home)
 	if err != nil {
 		return nil, err
