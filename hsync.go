@@ -9,9 +9,10 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
+
 	"github.com/golang/glog"
 	hsync "github.com/hidu/hsync/internal"
-	"os"
 )
 
 var d = flag.Bool("d", false, "run model,defaul is client")

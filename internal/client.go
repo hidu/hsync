@@ -3,8 +3,6 @@ package internal
 import (
 	"flag"
 	"fmt"
-	"github.com/golang/glog"
-	"gopkg.in/fsnotify.v1"
 	"net/rpc"
 	"os"
 	"path/filepath"
@@ -12,6 +10,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/golang/glog"
+	"gopkg.in/fsnotify.v1"
 )
 
 type HsyncClient struct {
@@ -20,7 +21,7 @@ type HsyncClient struct {
 	watcher         *fsnotify.Watcher
 	clientEvents    []*ClientEvent
 	mu              sync.RWMutex
-	conncetTryTimes int
+	connectTryTimes int
 	reNameEvent     *fsnotify.Event
 	fileCount       uint64
 	remoteHost      *ServerHost
@@ -68,7 +69,7 @@ func NewHsyncClient(confName string, hostName string) (*HsyncClient, error) {
 			}
 		}
 		if hs.remoteHost == nil {
-			fmt.Println("unknow host name:", hostName)
+			fmt.Println("unknown host name:", hostName)
 			fmt.Println("active hosts:")
 			fmt.Println(conf.activeHostsString())
 			os.Exit(1)
@@ -92,8 +93,8 @@ func (hc *HsyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
 }
 
 func (hc *HsyncClient) Connect() error {
-	hc.conncetTryTimes++
-	glog.Infoln("connect to", hc.remoteHost.Host, "tryTimes:", hc.conncetTryTimes)
+	hc.connectTryTimes++
+	glog.Infoln("connect to", hc.remoteHost.Host, "tryTimes:", hc.connectTryTimes)
 	client, err := RpcDialHTTPPath("tcp", hc.remoteHost.Host, rpc.DefaultRPCPath, 2*time.Second)
 	if err != nil {
 		glog.Warningln("connect err", err)
@@ -101,7 +102,7 @@ func (hc *HsyncClient) Connect() error {
 	}
 
 	glog.Infoln("connect to", hc.remoteHost.Host, "success")
-	hc.conncetTryTimes = 0
+	hc.connectTryTimes = 0
 	hc.client = client
 
 	rv := strings.Split(hc.RemoteVersion(), " ")
@@ -300,7 +301,7 @@ func (hc *HsyncClient) CheckOrSend(absName string) (err error) {
 		glog.V(2).Infoln("[", id, "] sync ignore", relPath)
 		return
 	}
-remote_check:
+remoteCheck:
 	remoteStat, err := hc.RemoteGetStat(absPath)
 	if err != nil {
 		glog.Warningln("[", id, "] sync getstat failed", err)
@@ -313,8 +314,8 @@ remote_check:
 	}
 	if localStat.IsDir() && remoteStat.Exists && !remoteStat.IsDir() {
 		err = hc.RemoteDel(absPath)
-		glog.Infoln("[", id, "]", relPath, "local_is_dir_but_remte_is_not_dir,delete:", err)
-		goto remote_check
+		glog.Infoln("[", id, "]", relPath, "local_is_dir_but_remote_is_not_dir,delete:", err)
+		goto remoteCheck
 	}
 	if !remoteStat.Exists || localStat.Md5 != remoteStat.Md5 {
 		if localStat.Size/TRANS_MAX_LENGTH < 3 {
@@ -372,7 +373,7 @@ func (hc *HsyncClient) Watch() (err error) {
 		for {
 			select {
 			case event := <-hc.watcher.Events:
-				hc.eventHander(event)
+				hc.eventHandler(event)
 			case err := <-hc.watcher.Errors:
 				glog.Warningln("fswatch error:", err)
 			}
@@ -421,10 +422,10 @@ func (hc *HsyncClient) eventLoop() {
 	if clientThreadNumber < 1 {
 		glog.Error("sync loop exit")
 	}
-	//限制同时check的文件数量为100,以避免同时打开大量文件
+	// 限制同时check的文件数量为100,以避免同时打开大量文件
 	checkChan := make(chan bool, clientThreadNumber)
 
-	eventHander := func() {
+	eventHandler := func() {
 		n := len(hc.clientEvents)
 		glog.V(2).Info("event buffer length:", n)
 		fmt.Print(n)
@@ -436,8 +437,8 @@ func (hc *HsyncClient) eventLoop() {
 		elist := make([]*ClientEvent, len(hc.clientEvents))
 
 		copy(elist, hc.clientEvents)
-		//@todo 需要处理一个文件，同时多种事件的情况，比如先删除再立马创建
-		//要保证处理的是有时序的
+		// @todo 需要处理一个文件，同时多种事件的情况，比如先删除再立马创建
+		// 要保证处理的是有时序的
 		hc.clientEvents = make([]*ClientEvent, 0)
 		hc.mu.Unlock()
 
@@ -471,7 +472,7 @@ func (hc *HsyncClient) eventLoop() {
 			case EVENT_RENAME:
 				hc.RemoteReName(ev.Name, ev.NameTo)
 			default:
-				glog.Warningln("unknow event:", ev)
+				glog.Warningln("unknown event:", ev)
 			}
 		}
 		wg.Wait()
@@ -481,7 +482,7 @@ func (hc *HsyncClient) eventLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			eventHander()
+			eventHandler()
 		}
 	}
 	glog.Error("sync loop exit")
@@ -513,7 +514,7 @@ func (hc *HsyncClient) addNewDir(dirPath string) {
 	glog.Infoln("sync", dirPath, "done", err)
 }
 
-func (hc *HsyncClient) eventHander(event fsnotify.Event) {
+func (hc *HsyncClient) eventHandler(event fsnotify.Event) {
 	glog.V(2).Infoln("event", event)
 
 	absPath, relName, err := hc.CheckPath(event.Name)
@@ -569,7 +570,7 @@ func (hc *HsyncClient) eventHander(event fsnotify.Event) {
 	}
 }
 
-func (hc *HsyncClient) handerChange(name string) error {
+func (hc *HsyncClient) handlerChange(name string) error {
 	hc.RemoteSaveFile(name)
 	info, err := os.Stat(name)
 	if err == nil && info.IsDir() {

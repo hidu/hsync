@@ -3,9 +3,10 @@ package internal
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/golang/glog"
 	"path/filepath"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 type ServerConf struct {

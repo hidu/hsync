@@ -3,7 +3,6 @@ package internal
 import (
 	"bytes"
 	"fmt"
-	"github.com/golang/glog"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -11,6 +10,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 type HsyncServer struct {

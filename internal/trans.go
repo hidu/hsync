@@ -2,13 +2,14 @@ package internal
 
 import (
 	"fmt"
-	"github.com/golang/glog"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/golang/glog"
 )
 
 type Trans struct {
@@ -267,7 +268,7 @@ func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
 }
 
 func (trans *Trans) eventLoop() {
-	elist := make(map[string]EventType)
+	eventList := make(map[string]EventType)
 	dealEvent := func(relName string, et EventType) {
 		deployTo := trans.server.conf.getDeployTo(relName)
 		glog.V(2).Infoln("trans.eventLoop deploy", relName, "-->", deployTo)
@@ -281,23 +282,23 @@ func (trans *Trans) eventLoop() {
 			}
 		}
 	}
-	eventHander := func() {
+	eventHandler := func() {
 		glog.V(2).Info("trans.eventLoop event buffer length:", len(trans.events))
 		if len(trans.events) == 0 {
 			return
 		}
 		trans.mu.Lock()
 		for k, v := range trans.events {
-			elist[k] = v
+			eventList[k] = v
 			delete(trans.events, k)
 		}
 		trans.mu.Unlock()
-		if len(elist) == 0 {
+		if len(eventList) == 0 {
 			return
 		}
-		for fileName, v := range elist {
+		for fileName, v := range eventList {
 			dealEvent(fileName, v)
-			delete(elist, fileName)
+			delete(eventList, fileName)
 		}
 	}
 
@@ -305,7 +306,7 @@ func (trans *Trans) eventLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			eventHander()
+			eventHandler()
 		}
 	}
 	glog.Error("trans.eventLoop exit")

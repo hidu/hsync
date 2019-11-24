@@ -1,11 +1,12 @@
 package internal
 
 import (
-	"github.com/golang/glog"
 	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 var version string = "0.2.3 20160725"
