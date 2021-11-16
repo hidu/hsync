@@ -5,9 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
@@ -29,7 +29,7 @@ func StrMd5(mystr string) string {
 func ByteMd5(data []byte) string {
 	h := md5.New()
 	h.Write(data)
-	return fmt.Sprintf("%x", h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func FileMd5(name string) string {
@@ -40,7 +40,7 @@ func FileMd5(name string) string {
 	defer f.Close()
 	h := md5.New()
 	io.Copy(h, f)
-	return fmt.Sprintf("%x", h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func RpcDialHTTPPath(network, address, path string, timeout time.Duration) (*rpc.Client, error) {

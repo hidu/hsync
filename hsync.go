@@ -12,6 +12,7 @@ import (
 	"os"
 
 	"github.com/golang/glog"
+
 	hsync "github.com/hidu/hsync/internal"
 )
 

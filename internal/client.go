@@ -164,7 +164,7 @@ checkConnect:
 
 func (hc *HsyncClient) RemoteVersion() string {
 	var serverVersion string
-	hc.Call("Trans.Version", version, &serverVersion)
+	hc.Call("Trans.VersionFile", version, &serverVersion)
 	glog.Infoln("remote server version is", serverVersion)
 	return serverVersion
 }
@@ -351,9 +351,9 @@ func (hc *HsyncClient) flashSend(absName string) (err error) {
 		}
 	}
 	err = hc.remoteSaveFile(absPath, ignoreParts)
-	//	if err == nil && localStatSlice.Size < remoteStatSlice.Size {
-	//		err = hc.RemoteFileTruncate(absPath)
-	//	}
+	// 	if err == nil && localStatSlice.Size < remoteStatSlice.Size {
+	// 		err = hc.RemoteFileTruncate(absPath)
+	// 	}
 	return err
 }
 
@@ -391,7 +391,7 @@ func (hc *HsyncClient) Watch() (err error) {
 func (hc *HsyncClient) addWatch(dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		absPath, relPath, _ := hc.CheckPath(path)
-		//only need watch dir
+		// only need watch dir
 		if !info.IsDir() {
 			return nil
 		}
@@ -458,8 +458,8 @@ func (hc *HsyncClient) eventLoop() {
 				hc.RemoteSaveFile(ev.Name)
 			case EVENT_CHECK:
 
-				//hc.CheckOrSend(ev.Name)
-				//为了时序性 先这样处理
+				// hc.CheckOrSend(ev.Name)
+				// 为了时序性 先这样处理
 				wg.Add(1)
 				checkChan <- true
 				go (func(name string) {
@@ -540,7 +540,7 @@ func (hc *HsyncClient) eventHandler(event fsnotify.Event) {
 		if err == nil && stat.IsDir() {
 			hc.addWatch(absPath)
 		}
-		//rename event emit [rename->create->write], so just return
+		// rename event emit [rename->create->write], so just return
 		return
 	}
 
@@ -562,9 +562,9 @@ func (hc *HsyncClient) eventHandler(event fsnotify.Event) {
 		hc.watcher.Remove(absPath)
 	}
 
-	//now not support rename
+	// now not support rename
 	if event.Op&fsnotify.Rename == fsnotify.Rename {
-		//		hc.reNameEvent = &event
+		// 		hc.reNameEvent = &event
 		hc.addEvent(absPath, EVENT_DELETE, "")
 		hc.watcher.Remove(absPath)
 	}

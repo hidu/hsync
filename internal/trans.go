@@ -54,7 +54,7 @@ type FileStatPart struct {
 }
 
 func (stat *FileStat) IsDir() bool {
-	return stat.FileMode.IsDir() //&& stat.FileMode&os.ModeSymlink != 1
+	return stat.FileMode.IsDir() // && stat.FileMode&os.ModeSymlink != 1
 }
 
 type MyFile struct {
@@ -140,7 +140,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 		return err
 	}
 	myFile := arg.MyFile
-	//	glog.Infoln("Call CopyFile ", myFile.ToString())
+	// 	glog.Infoln("Call CopyFile ", myFile.ToString())
 	fullName, relName, err := trans.cleanFileName(arg.FileName)
 
 	defer func() {
@@ -206,7 +206,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 }
 
 func (trans *Trans) Version(clientVersion string, v *string) error {
-	glog.Infoln("trans.Version,client version:", clientVersion)
+	glog.Infoln("trans.VersionFile,client version:", clientVersion)
 	*v = version
 	return nil
 }
@@ -215,8 +215,14 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
-	glog.Infoln("trans.DeleteFile", arg.FileName)
+	if arg.FileName == "." {
+		glog.Infoln("trans.DeleteFile.ignored", arg.FileName)
+		return nil
+	}
+
 	fullName, relName, err := trans.cleanFileName(arg.FileName)
+	glog.Infoln("trans.DeleteFile", arg.FileName, fullName)
+
 	if err != nil {
 		return err
 	}
@@ -331,7 +337,7 @@ func fileGetStat(name string, stat *FileStat, md5 bool) error {
 	return nil
 }
 
-const TRANS_MAX_LENGTH = 10485760 //10Mb
+const TRANS_MAX_LENGTH = 10485760 // 10Mb
 
 func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 	stat := new(FileStat)
@@ -357,7 +363,7 @@ func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 		}
 		defer my.Close()
 		f.Index = index
-		f.Total = int64(math.Max(math.Ceil(float64(stat.Size)/float64(TRANS_MAX_LENGTH)), 1)) //fix 0 bit size
+		f.Total = int64(math.Max(math.Ceil(float64(stat.Size)/float64(TRANS_MAX_LENGTH)), 1)) // fix 0 bit size
 		var data []byte = make([]byte, TRANS_MAX_LENGTH)
 		n, err := my.ReadAt(data, f.Pos)
 		if err != nil && err != io.EOF {
