@@ -16,7 +16,7 @@ import (
 	hsync "github.com/hidu/hsync/internal"
 )
 
-var d = flag.Bool("d", false, "run model,defaul is client")
+var d = flag.Bool("d", false, "run model,default is client")
 var host = flag.String("h", "", "sync host name")
 var ve = flag.Bool("version", false, "show version:"+hsync.GetVersion())
 var demoConf = flag.String("demo_conf", "", "show default conf [client|server]")

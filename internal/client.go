@@ -164,7 +164,7 @@ checkConnect:
 
 func (hc *HsyncClient) RemoteVersion() string {
 	var serverVersion string
-	hc.Call("Trans.VersionFile", version, &serverVersion)
+	hc.Call("Trans.Version", version, &serverVersion)
 	glog.Infoln("remote server version is", serverVersion)
 	return serverVersion
 }
