@@ -2,7 +2,7 @@ package internal
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"path/filepath"
 	"strings"
 
@@ -34,12 +34,12 @@ func LoadServerConf(name string) (conf *ServerConf, err error) {
 			conf.Home = filepath.Join(conf.ConfDir, conf.Home)
 		}
 		conf.Home = filepath.Clean(conf.Home)
-		conf.DeployCmd = strings.TrimSpace(strings.Replace(conf.DeployCmd, "{pwd}", conf.ConfDir, -1))
+		conf.DeployCmd = strings.TrimSpace(strings.ReplaceAll(conf.DeployCmd, "{pwd}", conf.ConfDir))
 		conf.init()
 	}
 	if err == nil {
 		if conf.Addr == "" {
-			err = fmt.Errorf("server listen addr is empty")
+			err = errors.New("server listen addr is empty")
 		}
 	}
 	if err != nil {

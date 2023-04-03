@@ -1,8 +1,6 @@
-/**
-* sync dir
-* author: hidu <duv123+git@gmail.com>
-* https://github.com/hidu/hsync
- */
+// sync dir
+// author: hidu <duv123+git@gmail.com>
+// https://github.com/hidu/hsync
 
 package main
 

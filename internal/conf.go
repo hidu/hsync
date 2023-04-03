@@ -27,7 +27,7 @@ func NewCongRegexp(confs []string) (*ConfRegexp, error) {
 		if cf == "" {
 			continue
 		}
-		cfQuo := strings.Replace(regexp.QuoteMeta(cf), `\*`, `.*`, -1)
+		cfQuo := strings.ReplaceAll(regexp.QuoteMeta(cf), `\*`, `.*`)
 		if cfQuo[:1] == "/" {
 			cfQuo = "^" + cfQuo[1:]
 		}
@@ -58,10 +58,10 @@ func (cr *ConfRegexp) IsMatch(relName string) bool {
 	}
 	return false
 }
+
 func DemoConf(name string) string {
 	if name == "server" {
 		return ConfDemoServer
 	}
 	return ConfDemoClient
-
 }

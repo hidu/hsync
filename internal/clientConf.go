@@ -2,6 +2,7 @@ package internal
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -58,7 +59,7 @@ func LoadClientConf(name string) (conf *ClientConf, err error) {
 		conf.Home = filepath.Clean(conf.Home)
 
 		if conf.Hosts == nil {
-			err = fmt.Errorf("miss server hosts")
+			err = errors.New("miss server hosts")
 		}
 	}
 

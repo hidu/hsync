@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/golang/glog"
-	"gopkg.in/fsnotify.v1"
 )
 
 type HsyncClient struct {
@@ -26,6 +26,7 @@ type HsyncClient struct {
 	fileCount       uint64
 	remoteHost      *ServerHost
 }
+
 type EventType int
 
 const (
@@ -113,6 +114,7 @@ func (hc *HsyncClient) Connect() error {
 
 	return nil
 }
+
 func (hc *HsyncClient) CheckPath(name string) (absPath string, relPath string, err error) {
 	if !filepath.IsAbs(name) {
 		absPath, err = filepath.Abs(filepath.Join(hc.conf.Home, name))
@@ -126,7 +128,7 @@ func (hc *HsyncClient) CheckPath(name string) (absPath string, relPath string, e
 	return
 }
 
-func (hc *HsyncClient) Call(method string, args interface{}, reply interface{}) (err error) {
+func (hc *HsyncClient) Call(method string, args any, reply any) (err error) {
 checkConnect:
 	for hc.client == nil {
 		err = hc.Connect()
@@ -266,6 +268,7 @@ func (hc *HsyncClient) RemoteDel(name string) error {
 	}
 	return err
 }
+
 func (hc *HsyncClient) RemoteReName(name string, nameOld string) error {
 	_, relName, err := hc.CheckPath(name)
 	if err != nil {
@@ -390,6 +393,10 @@ func (hc *HsyncClient) Watch() (err error) {
 
 func (hc *HsyncClient) addWatch(dir string) {
 	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			glog.Warningf("walk %q with error  %v and skipped", dir, err)
+			return nil
+		}
 		absPath, relPath, _ := hc.CheckPath(path)
 		// only need watch dir
 		if !info.IsDir() {
@@ -447,7 +454,7 @@ func (hc *HsyncClient) eventLoop() {
 		var wg sync.WaitGroup
 		for _, ev := range elist {
 			cacheKey := ev.AsKey()
-			if t, has := eventCache[cacheKey]; has && time.Now().Sub(t).Seconds() < 5 {
+			if t, has := eventCache[cacheKey]; has && time.Since(t).Seconds() < 5 {
 				glog.V(2).Infoln("same event in loop,skip", cacheKey)
 				continue
 			}
@@ -479,11 +486,9 @@ func (hc *HsyncClient) eventLoop() {
 	}
 
 	ticker := time.NewTicker(1 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			eventHandler()
-		}
+	defer ticker.Stop()
+	for range ticker.C {
+		eventHandler()
 	}
 	glog.Error("sync loop exit")
 }

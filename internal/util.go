@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -99,7 +98,7 @@ func copyFile(dest, src string) (err error) {
 		return err
 	}
 	if info.IsDir() {
-		_, err := os.Stat(dest)
+		_, err = os.Stat(dest)
 		if os.IsNotExist(err) {
 			err = os.MkdirAll(dest, info.Mode())
 			if err != nil {
@@ -115,30 +114,34 @@ func copyFile(dest, src string) (err error) {
 			}
 			return nil
 		})
-	} else {
-		_, err = os.Stat(filepath.Dir(src))
+		return err
+	}
+
+	_, err = os.Stat(filepath.Dir(src))
+	if err != nil {
+		return err
+	}
+	destDir := filepath.Dir(dest)
+	if _, err := os.Stat(destDir); os.IsNotExist(err) {
+		err = checkDir(destDir, 0755)
 		if err != nil {
 			return err
 		}
-		destDir := filepath.Dir(dest)
-		if _, err := os.Stat(destDir); os.IsNotExist(err) {
-			err = checkDir(destDir, 0755)
-			if err != nil {
-				return err
-			}
-		}
-		if !info.Mode().IsDir() {
-			glog.Infof("copyFile src [%s] is not dir,dest [%s] removeAll", src, dest)
-			os.RemoveAll(dest)
-		}
-		_copyrw.Lock()
-		defer _copyrw.Unlock()
-		var d *os.File
-		d, err = os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
-		defer d.Close()
-		d.Truncate(0)
-		_, err = io.Copy(d, f)
 	}
+	if !info.Mode().IsDir() {
+		glog.Infof("copyFile src [%s] is not dir,dest [%s] removeAll", src, dest)
+		os.RemoveAll(dest)
+	}
+	_copyrw.Lock()
+	defer _copyrw.Unlock()
+
+	d, err1 := os.OpenFile(dest, os.O_RDWR|os.O_CREATE, info.Mode())
+	if err1 != nil {
+		return err1
+	}
+	defer d.Close()
+	d.Truncate(0)
+	_, err = io.Copy(d, f)
 	return err
 }
 
@@ -153,13 +156,13 @@ func dataGzipEncode(data []byte) (out []byte) {
 
 func dataGzipDecode(data []byte) (out []byte) {
 	gr, _ := gzip.NewReader(bytes.NewBuffer(data))
-	bs, _ := ioutil.ReadAll(gr)
+	bs, _ := io.ReadAll(gr)
 	return bs
 }
 
 // loadJsonFile load json
-func loadJSONFile(jsonPath string, val interface{}) error {
-	bs, err := ioutil.ReadFile(jsonPath)
+func loadJSONFile(jsonPath string, val any) error {
+	bs, err := os.ReadFile(jsonPath)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -89,10 +90,11 @@ func (trans *Trans) cleanFileName(fileName string) (absPath string, relName stri
 	relName, err = filepath.Rel(trans.server.conf.Home, absPath)
 	return
 }
+
 func (trans *Trans) checkToken(arg *RpcArgs) (bool, error) {
 	if trans.server.conf.Token != arg.Token {
 		glog.Warningln("token not match")
-		return false, fmt.Errorf("token not match")
+		return false, errors.New("token not match")
 	}
 	arg.FileName = filepath.Clean(arg.FileName)
 	if arg.MyFile != nil && arg.MyFile.Name != "" {
@@ -113,6 +115,7 @@ func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
 	err = fileGetStat(fullName, result, true)
 	return err
 }
+
 func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
@@ -283,9 +286,10 @@ func (trans *Trans) eventLoop() {
 				for _, to := range deployTo {
 					trans.server.deploy(to, relName)
 				}
-			} else if et == EVENT_DELETE {
-
 			}
+			// else if et == EVENT_DELETE {
+			// 	do nothing
+			// }
 		}
 	}
 	eventHandler := func() {
@@ -309,11 +313,10 @@ func (trans *Trans) eventLoop() {
 	}
 
 	ticker := time.NewTicker(1 * time.Second)
-	for {
-		select {
-		case <-ticker.C:
-			eventHandler()
-		}
+	defer ticker.Stop()
+
+	for range ticker.C {
+		eventHandler()
 	}
 	glog.Error("trans.eventLoop exit")
 }
@@ -323,9 +326,8 @@ func fileGetStat(name string, stat *FileStat, md5 bool) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
-		} else {
-			return err
 		}
+		return err
 	}
 	stat.Exists = true
 	stat.Mtime = info.ModTime()
@@ -393,12 +395,11 @@ func fileGetStatSlice(name string, statSlice *FileStatSlice) error {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil
-		} else {
-			return err
 		}
+		return err
 	}
 	if info.IsDir() {
-		return fmt.Errorf("not file")
+		return errors.New("not file")
 	}
 	my, err := os.Open(name)
 	if err != nil {
