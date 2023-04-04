@@ -1,7 +1,3 @@
-// sync dir
-// author: hidu <duv123+git@gmail.com>
-// https://github.com/hidu/hsync
-
 package main
 
 import (
@@ -14,11 +10,11 @@ import (
 	hsync "github.com/hidu/hsync/internal"
 )
 
-var d = flag.Bool("d", false, "run model,default is client")
+var d = flag.Bool("d", false, "run as daemon server, default is client")
 var host = flag.String("h", "", "sync host name")
 var ve = flag.Bool("version", false, "show version:"+hsync.GetVersion())
 var demoConf = flag.String("demo_conf", "", "show default conf [client|server]")
-var deployOnly = flag.Bool("deploy", false, "deploy all files for server.")
+var deployOnly = flag.Bool("deploy", false, "deploy all files for server")
 
 func init() {
 	flag.Lookup("alsologtostderr").DefValue = "true"
@@ -63,10 +59,11 @@ func main() {
 	}
 
 	if *d {
-		server, err := hsync.NewHsyncServer(confName)
+		server, err := hsync.NewHSyncServer(confName)
 		if err != nil {
 			glog.Exitln("start server failed:", err)
 		}
+
 		if *deployOnly {
 			server.DeployAll()
 			return
@@ -74,7 +71,7 @@ func main() {
 
 		server.Start()
 	} else {
-		client, err := hsync.NewHsyncClient(confName, *host)
+		client, err := hsync.NewHSyncClient(confName, *host)
 		if err != nil {
 			glog.Exitln("start hsync client failed:", err)
 		}

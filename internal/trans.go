@@ -16,10 +16,10 @@ import (
 type Trans struct {
 	events map[string]EventType
 	mu     sync.RWMutex
-	server *HsyncServer
+	server *HSyncServer
 }
 
-func NewTrans(server *HsyncServer) *Trans {
+func NewTrans(server *HSyncServer) *Trans {
 	trans := &Trans{
 		server: server,
 		events: make(map[string]EventType),
@@ -131,8 +131,8 @@ func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
 	}
 	err = os.Rename(fullNameOld, fullName)
 	if err == nil {
-		trans.addEvent(relName, EVENT_UPDATE)
-		trans.addEvent(relNameOld, EVENT_DELETE)
+		trans.addEvent(relName, EventUpdate)
+		trans.addEvent(relNameOld, EventDelete)
 		*result = 1
 	}
 	return err
@@ -198,7 +198,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 			if err != nil {
 				return err
 			}
-			trans.addEvent(relName, EVENT_UPDATE)
+			trans.addEvent(relName, EventUpdate)
 		}
 	}
 	if err != nil {
@@ -234,7 +234,7 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 		return err
 	}
 	*result = 1
-	trans.addEvent(relName, EVENT_DELETE)
+	trans.addEvent(relName, EventDelete)
 	return err
 }
 
@@ -264,8 +264,8 @@ func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
 	if err != nil {
 		return err
 	}
-
 	defer f.Close()
+
 	err = f.Truncate(arg.MyFile.Stat.Size)
 	if err == nil {
 		info, err := f.Stat()
@@ -282,12 +282,12 @@ func (trans *Trans) eventLoop() {
 		deployTo := trans.server.conf.getDeployTo(relName)
 		glog.V(2).Infoln("trans.eventLoop deploy", relName, "-->", deployTo)
 		if len(deployTo) > 0 {
-			if et == EVENT_UPDATE {
+			if et == EventUpdate {
 				for _, to := range deployTo {
 					trans.server.deploy(to, relName)
 				}
 			}
-			// else if et == EVENT_DELETE {
+			// else if et == EventDelete {
 			// 	do nothing
 			// }
 		}
@@ -333,13 +333,13 @@ func fileGetStat(name string, stat *FileStat, md5 bool) error {
 	stat.Mtime = info.ModTime()
 	stat.Size = info.Size()
 	stat.FileMode = info.Mode()
-	if !stat.IsDir() && md5 {
+	if stat.Size > 0 && !stat.IsDir() && md5 && stat.FileMode&os.ModeNamedPipe == 0 {
 		stat.Md5 = FileMd5(name)
 	}
 	return nil
 }
 
-const TRANS_MAX_LENGTH = 10485760 // 10Mb
+const TransMaxLength = 10485760 // 10Mb
 
 func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 	stat := new(FileStat)
@@ -356,7 +356,7 @@ func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 		Name: absPath,
 		Stat: stat,
 		Gzip: false,
-		Pos:  TRANS_MAX_LENGTH * index,
+		Pos:  TransMaxLength * index,
 	}
 	if !stat.IsDir() {
 		my, err := os.Open(absPath)
@@ -365,8 +365,8 @@ func fileGetMyFile(absPath string, index int64) (*MyFile, error) {
 		}
 		defer my.Close()
 		f.Index = index
-		f.Total = int64(math.Max(math.Ceil(float64(stat.Size)/float64(TRANS_MAX_LENGTH)), 1)) // fix 0 bit size
-		var data []byte = make([]byte, TRANS_MAX_LENGTH)
+		f.Total = int64(math.Max(math.Ceil(float64(stat.Size)/float64(TransMaxLength)), 1)) // fix 0 bit size
+		var data []byte = make([]byte, TransMaxLength)
 		n, err := my.ReadAt(data, f.Pos)
 		if err != nil && err != io.EOF {
 			return nil, err
@@ -408,12 +408,12 @@ func fileGetStatSlice(name string, statSlice *FileStatSlice) error {
 	defer my.Close()
 
 	statSlice.Size = info.Size()
-	statSlice.Total = int64(math.Max(math.Ceil(float64(statSlice.Size)/float64(TRANS_MAX_LENGTH)), 1))
+	statSlice.Total = int64(math.Max(math.Ceil(float64(statSlice.Size)/float64(TransMaxLength)), 1))
 	statSlice.Parts = make([]*FileStatPart, 0, statSlice.Total)
 	var index int64 = 0
 	var pos int64 = 0
 
-	buf := make([]byte, TRANS_MAX_LENGTH)
+	buf := make([]byte, TransMaxLength)
 
 	for index < statSlice.Total {
 		n, err := my.ReadAt(buf, pos)
@@ -421,7 +421,7 @@ func fileGetStatSlice(name string, statSlice *FileStatSlice) error {
 			return err
 		}
 		sp := new(FileStatPart)
-		sp.Start = index * TRANS_MAX_LENGTH
+		sp.Start = index * TransMaxLength
 		sp.Len = int64(n)
 		pos = sp.Start + sp.Len
 		sp.Md5 = ByteMd5(buf[:n])

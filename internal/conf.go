@@ -9,7 +9,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var version string = "0.2.4 20200514"
+var version string = "0.2.5 20220404"
 
 func GetVersion() string {
 	return version

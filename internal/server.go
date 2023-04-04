@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"fmt"
 	"net"
 	"net/http"
 	"net/rpc"
@@ -14,12 +13,12 @@ import (
 	"github.com/golang/glog"
 )
 
-type HsyncServer struct {
+type HSyncServer struct {
 	conf          *ServerConf
 	deployCmdArgs []string
 }
 
-func NewHsyncServer(confName string) (*HsyncServer, error) {
+func NewHSyncServer(confName string) (*HSyncServer, error) {
 	conf, err := LoadServerConf(confName)
 	if err != nil {
 		return nil, err
@@ -29,9 +28,12 @@ func NewHsyncServer(confName string) (*HsyncServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	pwd, _ := os.Getwd()
+	pwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
 	glog.Infoln("cwd:", pwd)
-	server := &HsyncServer{
+	server := &HSyncServer{
 		conf: conf,
 	}
 	reg := regexp.MustCompile(`\s+`)
@@ -39,11 +41,11 @@ func NewHsyncServer(confName string) (*HsyncServer, error) {
 	return server, nil
 }
 
-func (server *HsyncServer) Start() {
+func (server *HSyncServer) Start() {
 	trans := NewTrans(server)
 	rpc.Register(trans)
 	rpc.HandleHTTP()
-	fmt.Println("hsync server listen at ", server.conf.Addr)
+	glog.Infoln("hsync server listen at ", server.conf.Addr)
 	l, err := net.Listen("tcp", server.conf.Addr)
 	if err != nil {
 		glog.Exitln("ListenAndServe,err ", err)
@@ -55,7 +57,7 @@ func (server *HsyncServer) Start() {
 	http.Serve(l, nil)
 }
 
-func (server *HsyncServer) DeployAll() {
+func (server *HSyncServer) DeployAll() {
 	glog.Infoln("deploy all start")
 	for _, dc := range server.conf.Deploy {
 		server.deploy(dc.To, dc.From)
@@ -63,34 +65,36 @@ func (server *HsyncServer) DeployAll() {
 	glog.Infoln("deploy all done")
 }
 
-func (server *HsyncServer) deploy(dst, src string) {
+func (server *HSyncServer) deploy(dst, src string) {
 	var err error
 	os.Chdir(server.conf.Home)
 	err = copyFile(dst, src)
 	pwd, _ := os.Getwd()
-	glog.Infof("deploy Copy [%s]->[%s],err=%v,pwd=%s", src, dst, err, pwd)
-	if err == nil {
-		if server.conf.DeployCmd != "" {
-			cmdArgs := make([]string, len(server.deployCmdArgs)-1)
-			copy(cmdArgs, server.deployCmdArgs[1:])
-
-			cmdArgs = append(cmdArgs, dst)
-
-			cmdArgs = append(cmdArgs, src)
-
-			cmdArgs = append(cmdArgs, "update")
-
-			cmd := exec.Command(server.deployCmdArgs[0], cmdArgs...)
-			cmd.Dir = server.conf.Home
-
-			var out bytes.Buffer
-			cmd.Stdout = &out
-
-			var outErr bytes.Buffer
-			cmd.Stderr = &outErr
-			err = cmd.Run()
-			glog.Infof("deployCmd [%s]->[%s],err=%v", src, dst, err)
-			glog.V(2).Infoln("deployCmd", cmdArgs, "deploy stdOut:", out.String(), "stdErrOut:", outErr.String(), "err=", err)
-		}
+	glog.Infof("deploy Copy [%s]->[%s],err=%v, pwd=%s", src, dst, err, pwd)
+	if err != nil {
+		return
 	}
+
+	if server.conf.DeployCmd == "" {
+		return
+	}
+
+	cmdArgs := make([]string, len(server.deployCmdArgs)-1)
+	copy(cmdArgs, server.deployCmdArgs[1:])
+
+	cmdArgs = append(cmdArgs, dst)
+	cmdArgs = append(cmdArgs, src)
+	cmdArgs = append(cmdArgs, "update")
+
+	cmd := exec.Command(server.deployCmdArgs[0], cmdArgs...)
+	cmd.Dir = server.conf.Home
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+
+	var outErr bytes.Buffer
+	cmd.Stderr = &outErr
+	err = cmd.Run()
+	glog.Infof("deployCmd [%s]->[%s],err=%v", src, dst, err)
+	glog.V(2).Infoln("deployCmd", cmdArgs, "deploy stdOut:", out.String(), "stdErrOut:", outErr.String(), "err=", err)
 }
