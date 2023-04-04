@@ -1,6 +1,6 @@
 hsync
 ===
-基于fsnotify的实时文件同步工具  
+基于 fsnotify 的实时文件同步工具  
 
 可用来帮助我们码农将本地办公电脑上的代码实时同步并部署到远程测试环境，以达到实时预览效果的目的。  
 
@@ -10,16 +10,16 @@ hsync
 
 ## install
 
-```
-go get -u github.com/hidu/hsync
+```bash
+go install github.com/hidu/hsync@latest
 ```
 
 
-## useage
-### server:
+## usage
+### 1 server:
 >hsync -d hsyncd.json
 
-```
+```json
 {
     "addr":":8700",
     "home":"./",
@@ -47,7 +47,7 @@ deployCmd运行时的实际参数：
 >bash deploy.sh /home/work/app/phpsrc/index.php phpsrc/index.php update
 
 #### deploy.sh demo
-```
+```bash
 #!/bin/bash
 
 DST=$1
@@ -57,15 +57,15 @@ if [ "$SRC" == "a/d1" ];then
 fi
 ```
 
-####force deploy all
+#### force deploy all
 >hsync -deploy hsyncd.json
 
 
 
-### client:
+### 2 client:
 >hsync hsync.json  
 
-```
+```json
 {
     "server":"127.0.0.1:8700",
     "home":"./",
