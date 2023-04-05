@@ -17,6 +17,7 @@ type ClientConf struct {
 	Ignore   []string               `json:"ignore"`
 	ConfDir  string
 	ignoreCr *ConfRegexp
+	allowCr  *ConfRegexp
 }
 
 type ServerHost struct {
@@ -36,6 +37,9 @@ func (conf *ClientConf) IsIgnore(relName string) bool {
 	if conf.ignoreCr.IsMatch(relName) {
 		return true
 	}
+	if len(conf.Allow) > 0 && !conf.allowCr.IsMatch(relName) {
+		return true
+	}
 	return false
 }
 
@@ -48,35 +52,50 @@ func (conf *ClientConf) activeHostsString() string {
 	return strings.Join(hosts, "\n")
 }
 
-func LoadClientConf(name string) (conf *ClientConf, err error) {
-	err = loadJSONFile(name, &conf)
-	if err == nil {
-		conf.ConfDir, err = filepath.Abs(name)
-		conf.ConfDir = filepath.Dir(conf.ConfDir)
-		if !filepath.IsAbs(conf.Home) {
-			conf.Home = filepath.Join(conf.ConfDir, conf.Home)
-		}
-		conf.Home = filepath.Clean(conf.Home)
-
-		if conf.Hosts == nil {
-			err = errors.New("miss server hosts")
-		}
+func (conf *ClientConf) Parser() error {
+	if len(conf.Hosts) == 0 {
+		return errors.New("miss server hosts")
 	}
-
-	if err == nil && conf != nil {
-		conf.ignoreCr, err = NewCongRegexp(conf.Ignore)
-	}
-
+	var err error
+	conf.ignoreCr, err = NewCongRegexp(conf.Ignore)
 	if err != nil {
-		glog.Warningln("load conf [", name, "]failed,err:", err)
-	} else {
-		glog.V(2).Info("load conf [", name, "]suc,", conf)
+		return fmt.Errorf("parser Ignore: %w", err)
 	}
 
+	if len(conf.Allow) > 0 {
+		conf.allowCr, err = NewCongRegexp(conf.Allow)
+		if err != nil {
+			return fmt.Errorf("parser Allow: %w", err)
+		}
+	}
+	return nil
+}
+
+func LoadClientConf(name string) (conf *ClientConf, err error) {
+	logErr := func(err error) {
+		glog.Warningln("load conf [", name, "]failed, err:", err)
+	}
+	err = loadJSONFile(name, &conf)
+	if err != nil {
+		logErr(err)
+		return nil, err
+	}
+	fp, err := filepath.Abs(name)
+	if err != nil {
+		logErr(err)
+		return nil, err
+	}
+	conf.ConfDir = filepath.Dir(fp)
+	if !filepath.IsAbs(conf.Home) {
+		conf.Home = filepath.Join(conf.ConfDir, conf.Home)
+	}
+	conf.Home = filepath.Clean(conf.Home)
+
+	glog.V(2).Info("load conf [", name, "] success,", conf)
 	return
 }
 
-var ConfDemoClient string = `
+var ConfDemoClient = `
 {
     "hosts":{
         "default":{
@@ -85,6 +104,7 @@ var ConfDemoClient string = `
         }
     },
     "home":"./data/",
+    "allow":[],
     "ignore":[
         "a_ignore/b",
         "d_ignore/*"

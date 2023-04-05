@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"fmt"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -9,7 +10,7 @@ import (
 	"github.com/golang/glog"
 )
 
-var version string = "0.2.5 20220404"
+const version = "0.2.5 20220404"
 
 func GetVersion() string {
 	return version
@@ -36,8 +37,9 @@ func NewCongRegexp(confs []string) (*ConfRegexp, error) {
 		glog.V(2).Infoln("Conf reg [", cf, "] quote as [", cfQuo, "]")
 
 		if err != nil {
-			glog.Warningln("wrong regexp:[", cf, "],skip it")
-			continue
+			err = fmt.Errorf("compile regexp rule %q failed, %w", cf, err)
+			glog.Warningln(err.Error())
+			return nil, err
 		}
 		regs = append(regs, reg)
 	}

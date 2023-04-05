@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,16 +14,64 @@ import (
 	"github.com/golang/glog"
 )
 
+type transStats struct {
+	success map[string]int64
+	fail    map[string]int64
+	last    map[string]string
+	mux     sync.Mutex
+}
+
+func (ts *transStats) addWithArgs(name string, arg *RpcArgs, err error) {
+	var msg string
+	if arg != nil {
+		msg = arg.FileName
+	}
+	ts.add(name, msg, err)
+}
+
+func (ts *transStats) add(name string, msg string, err error) {
+	ts.mux.Lock()
+	defer ts.mux.Unlock()
+	if err == nil {
+		ts.last[name] = "success: " + time.Now().Format(time.DateTime) + " " + msg
+		ts.success[name]++
+		return
+	}
+	ts.fail[name]++
+	ts.last[name] = "fail: " + time.Now().Format(time.DateTime) + " " + msg + ", " + err.Error()
+}
+
+func (ts *transStats) String() string {
+	ts.mux.Lock()
+	defer ts.mux.Unlock()
+	data := map[string]any{
+		"Success": ts.success,
+		"Fail":    ts.fail,
+		"Last":    ts.last,
+	}
+	bf, err := json.MarshalIndent(data, " ", "  ")
+	if err != nil {
+		return err.Error()
+	}
+	return string(bf)
+}
+
 type Trans struct {
 	events map[string]EventType
 	mu     sync.RWMutex
 	server *HSyncServer
+	stats  *transStats
 }
 
 func NewTrans(server *HSyncServer) *Trans {
 	trans := &Trans{
 		server: server,
 		events: make(map[string]EventType),
+		stats: &transStats{
+			success: map[string]int64{},
+			fail:    map[string]int64{},
+			last:    map[string]string{},
+		},
 	}
 	go trans.eventLoop()
 	return trans
@@ -78,6 +127,10 @@ func (trans *Trans) addEvent(relName string, et EventType) {
 	trans.events[relName] = et
 }
 
+func (trans *Trans) Stats() string {
+	return trans.stats.String()
+}
+
 func (trans *Trans) cleanFileName(fileName string) (absPath string, relName string, err error) {
 	if filepath.IsAbs(fileName) {
 		absPath = filepath.Clean(fileName)
@@ -104,6 +157,9 @@ func (trans *Trans) checkToken(arg *RpcArgs) (bool, error) {
 }
 
 func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("FileStat", arg, err)
+	}()
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
@@ -117,6 +173,9 @@ func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
 }
 
 func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("FileReName", arg, err)
+	}()
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
@@ -138,7 +197,10 @@ func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
 	return err
 }
 
-func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
+func (trans *Trans) CopyFile(arg *RpcArgs, result *int) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("CopyFile", arg, err)
+	}()
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
@@ -208,13 +270,20 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) error {
 	return err
 }
 
-func (trans *Trans) Version(clientVersion string, v *string) error {
+func (trans *Trans) Version(clientVersion string, v *string) (err error) {
+	defer func() {
+		trans.stats.add("Version", "client:"+clientVersion, err)
+	}()
 	glog.Infoln("trans.VersionFile,client version:", clientVersion)
 	*v = version
 	return nil
 }
 
 func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("DeleteFile", arg, err)
+	}()
+
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
@@ -239,6 +308,9 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 }
 
 func (trans *Trans) FileStatSlice(arg *RpcArgs, result *FileStatSlice) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("FileStatSlice", arg, err)
+	}()
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
@@ -252,6 +324,9 @@ func (trans *Trans) FileStatSlice(arg *RpcArgs, result *FileStatSlice) (err erro
 }
 
 func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("FileTruncate", arg, err)
+	}()
 	if suc, err := trans.checkToken(arg); !suc {
 		return err
 	}
@@ -277,7 +352,7 @@ func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
 }
 
 func (trans *Trans) eventLoop() {
-	eventList := make(map[string]EventType)
+	events := make(map[string]EventType)
 	dealEvent := func(relName string, et EventType) {
 		deployTo := trans.server.conf.getDeployTo(relName)
 		glog.V(2).Infoln("trans.eventLoop deploy", relName, "-->", deployTo)
@@ -299,16 +374,16 @@ func (trans *Trans) eventLoop() {
 		}
 		trans.mu.Lock()
 		for k, v := range trans.events {
-			eventList[k] = v
+			events[k] = v
 			delete(trans.events, k)
 		}
 		trans.mu.Unlock()
-		if len(eventList) == 0 {
+		if len(events) == 0 {
 			return
 		}
-		for fileName, v := range eventList {
+		for fileName, v := range events {
 			dealEvent(fileName, v)
-			delete(eventList, fileName)
+			delete(events, fileName)
 		}
 	}
 

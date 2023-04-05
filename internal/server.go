@@ -16,6 +16,7 @@ import (
 type HSyncServer struct {
 	conf          *ServerConf
 	deployCmdArgs []string
+	trans         *Trans
 }
 
 func NewHSyncServer(confName string) (*HSyncServer, error) {
@@ -36,25 +37,31 @@ func NewHSyncServer(confName string) (*HSyncServer, error) {
 	server := &HSyncServer{
 		conf: conf,
 	}
+	server.trans = NewTrans(server)
+	rpc.Register(server.trans)
 	reg := regexp.MustCompile(`\s+`)
 	server.deployCmdArgs = reg.Split(strings.TrimSpace(conf.DeployCmd), -1)
 	return server, nil
 }
 
 func (server *HSyncServer) Start() {
-	trans := NewTrans(server)
-	rpc.Register(trans)
 	rpc.HandleHTTP()
 	glog.Infoln("hsync server listen at ", server.conf.Addr)
 	l, err := net.Listen("tcp", server.conf.Addr)
 	if err != nil {
-		glog.Exitln("ListenAndServe,err ", err)
+		glog.Exitln("ListenAndServe, err ", err)
 	}
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		glog.Infoln("direct visit", r.RemoteAddr, r.Method, r.UserAgent(), r.Referer())
-		w.Write([]byte("hsyncd is ready (v" + GetVersion() + ")"))
-	})
-	http.Serve(l, nil)
+	http.HandleFunc("/", server.handlerIndex)
+	err = http.Serve(l, nil)
+	glog.Exitln("server exit: %s", err.Error())
+}
+
+func (server *HSyncServer) handlerIndex(w http.ResponseWriter, r *http.Request) {
+	glog.Infoln("direct visit", r.RemoteAddr, r.Method, r.UserAgent(), r.Referer())
+	w.Write([]byte("<p>hsyncd is ready (v" + GetVersion() + ")</p>"))
+	w.Write([]byte("Stats:<pre>"))
+	w.Write([]byte(server.trans.Stats()))
+	w.Write([]byte("</pre>"))
 }
 
 func (server *HSyncServer) DeployAll() {

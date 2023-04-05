@@ -52,6 +52,9 @@ func NewHSyncClient(confName string, hostName string) (*HSyncClient, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err = conf.Parser(); err != nil {
+		return nil, err
+	}
 	hs := &HSyncClient{
 		conf:         conf,
 		clientEvents: make([]*ClientEvent, 0),
