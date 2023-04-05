@@ -44,16 +44,15 @@ func NewHSyncServer(confName string) (*HSyncServer, error) {
 	return server, nil
 }
 
-func (server *HSyncServer) Start() {
+func (server *HSyncServer) Start() error {
 	rpc.HandleHTTP()
 	glog.Infoln("hsync server listen at ", server.conf.Addr)
 	l, err := net.Listen("tcp", server.conf.Addr)
 	if err != nil {
-		glog.Exitln("ListenAndServe, err ", err)
+		return err
 	}
 	http.HandleFunc("/", server.handlerIndex)
-	err = http.Serve(l, nil)
-	glog.Exitln("server exit: %s", err.Error())
+	return http.Serve(l, nil)
 }
 
 func (server *HSyncServer) handlerIndex(w http.ResponseWriter, r *http.Request) {

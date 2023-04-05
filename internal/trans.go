@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -91,12 +92,6 @@ type RpcArgs struct {
 	MyFile   *MyFile
 }
 
-type FileStatSlice struct {
-	Size  int64           `json:"size"`
-	Total int64           `json:"total"`
-	Parts []*FileStatPart `json:"parts"`
-}
-
 type FileStatPart struct {
 	Start int64  `json:"start"`
 	Len   int64  `json:"len"`
@@ -144,23 +139,23 @@ func (trans *Trans) cleanFileName(fileName string) (absPath string, relName stri
 	return
 }
 
-func (trans *Trans) checkToken(arg *RpcArgs) (bool, error) {
+func (trans *Trans) checkToken(arg *RpcArgs) error {
 	if trans.server.conf.Token != arg.Token {
 		glog.Warningln("token not match")
-		return false, errors.New("token not match")
+		return errors.New("token not match")
 	}
 	arg.FileName = filepath.Clean(arg.FileName)
 	if arg.MyFile != nil && arg.MyFile.Name != "" {
 		arg.MyFile.Name = filepath.Clean(arg.MyFile.Name)
 	}
-	return true, nil
+	return nil
 }
 
 func (trans *Trans) FileStat(arg *RpcArgs, result *FileStat) (err error) {
 	defer func() {
 		trans.stats.addWithArgs("FileStat", arg, err)
 	}()
-	if suc, err := trans.checkToken(arg); !suc {
+	if err = trans.checkToken(arg); err != nil {
 		return err
 	}
 	glog.Infoln("trans.FileStat", arg.FileName)
@@ -176,7 +171,7 @@ func (trans *Trans) FileReName(arg *RpcArgs, result *int) (err error) {
 	defer func() {
 		trans.stats.addWithArgs("FileReName", arg, err)
 	}()
-	if suc, err := trans.checkToken(arg); !suc {
+	if err = trans.checkToken(arg); err != nil {
 		return err
 	}
 	glog.Infoln("trans.FileReName", arg.MyFile.Name, "->", arg.FileName)
@@ -201,7 +196,7 @@ func (trans *Trans) CopyFile(arg *RpcArgs, result *int) (err error) {
 	defer func() {
 		trans.stats.addWithArgs("CopyFile", arg, err)
 	}()
-	if suc, err := trans.checkToken(arg); !suc {
+	if err = trans.checkToken(arg); err != nil {
 		return err
 	}
 	myFile := arg.MyFile
@@ -284,7 +279,7 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 		trans.stats.addWithArgs("DeleteFile", arg, err)
 	}()
 
-	if suc, err := trans.checkToken(arg); !suc {
+	if err = trans.checkToken(arg); err != nil {
 		return err
 	}
 	if arg.FileName == "." {
@@ -307,11 +302,17 @@ func (trans *Trans) DeleteFile(arg *RpcArgs, result *int) (err error) {
 	return err
 }
 
+type FileStatSlice struct {
+	Size  int64           `json:"size"`
+	Total int64           `json:"total"`
+	Parts []*FileStatPart `json:"parts"`
+}
+
 func (trans *Trans) FileStatSlice(arg *RpcArgs, result *FileStatSlice) (err error) {
 	defer func() {
 		trans.stats.addWithArgs("FileStatSlice", arg, err)
 	}()
-	if suc, err := trans.checkToken(arg); !suc {
+	if err = trans.checkToken(arg); err != nil {
 		return err
 	}
 	glog.Infoln("trans.FileStatSlice", arg.FileName)
@@ -327,7 +328,7 @@ func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
 	defer func() {
 		trans.stats.addWithArgs("FileTruncate", arg, err)
 	}()
-	if suc, err := trans.checkToken(arg); !suc {
+	if err = trans.checkToken(arg); err != nil {
 		return err
 	}
 	glog.Infoln("trans.FileStatSlice", arg.FileName)
@@ -342,12 +343,48 @@ func (trans *Trans) FileTruncate(arg *RpcArgs, result *int64) (err error) {
 	defer f.Close()
 
 	err = f.Truncate(arg.MyFile.Stat.Size)
-	if err == nil {
-		info, err := f.Stat()
-		if err == nil {
-			*result = info.Size()
-		}
+	if err != nil {
+		return err
 	}
+	info, err := f.Stat()
+	if err == nil {
+		*result = info.Size()
+	}
+	return err
+}
+
+type DirList struct {
+	Files []string
+}
+
+func (trans *Trans) DirList(arg *RpcArgs, result *DirList) (err error) {
+	defer func() {
+		trans.stats.addWithArgs("DirList", arg, err)
+	}()
+	if err = trans.checkToken(arg); err != nil {
+		return err
+	}
+	glog.Infoln("trans.FileStatSlice", arg.FileName)
+	fullName, _, err := trans.cleanFileName(arg.FileName)
+	if err != nil {
+		return err
+	}
+	result = &DirList{}
+	err = filepath.WalkDir(fullName, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		_, relName, err := trans.cleanFileName(path)
+		if err != nil {
+			return err
+		}
+		result.Files = append(result.Files, relName)
+		if d.IsDir() {
+			return filepath.SkipDir
+		}
+		return nil
+	})
 	return err
 }
 

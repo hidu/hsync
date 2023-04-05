@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -20,9 +21,9 @@ type HSyncClient struct {
 	client          *rpc.Client
 	conf            *ClientConf
 	watcher         *fsnotify.Watcher
-	clientEvents    []*ClientEvent
+	events          []*ClientEvent
 	mu              sync.RWMutex
-	connectTryTimes int
+	connectTryTimes atomic.Int64
 	reNameEvent     *fsnotify.Event
 	fileCount       uint64
 	remoteHost      *ServerHost
@@ -55,35 +56,40 @@ func NewHSyncClient(confName string, hostName string) (*HSyncClient, error) {
 	if err = conf.Parser(); err != nil {
 		return nil, err
 	}
-	hs := &HSyncClient{
-		conf:         conf,
-		clientEvents: make([]*ClientEvent, 0),
+	hc := &HSyncClient{
+		conf:   conf,
+		events: make([]*ClientEvent, 0),
 	}
-	if hostName == "" && conf.Hosts != nil {
-		for name, h := range conf.Hosts {
+	if err = hc.chooseHost(hostName); err != nil {
+		return nil, err
+	}
+	return hc, nil
+}
+
+func (hc *HSyncClient) chooseHost(hostName string) error {
+	if len(hc.conf.Hosts) == 0 {
+		return errors.New("no hosts")
+	}
+
+	if hostName == "" {
+		hc.remoteHost = hc.conf.Hosts["default"]
+		if hc.remoteHost != nil {
+			glog.Infoln("use host name: default")
+			return nil
+		}
+		for name, h := range hc.conf.Hosts {
 			glog.Infoln("use host name:", name)
-			hs.remoteHost = h
-			break
-		}
-	} else {
-		for name, h := range conf.Hosts {
-			if name == hostName {
-				glog.Infoln("use host name:", name)
-				hs.remoteHost = h
-				break
-			}
-		}
-		if hs.remoteHost == nil {
-			fmt.Println("unknown host name:", hostName)
-			fmt.Println("active hosts:")
-			fmt.Println(conf.activeHostsString())
-			os.Exit(1)
+			hc.remoteHost = h
+			return nil
 		}
 	}
-	if hs.remoteHost == nil || hs.remoteHost.Host == "" {
-		glog.Exitln("remote host empty:", hs.remoteHost)
+
+	hc.remoteHost = hc.conf.Hosts[hostName]
+	if hc.remoteHost == nil {
+		return fmt.Errorf("host=%q not found", hostName)
 	}
-	return hs, nil
+	glog.Infoln("use host name:", hostName)
+	return nil
 }
 
 func (hc *HSyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
@@ -97,9 +103,16 @@ func (hc *HSyncClient) NewArgs(fileName string, myFile *MyFile) *RpcArgs {
 	}
 }
 
+func (hc *HSyncClient) Start() error {
+	if err := hc.Connect(); err != nil {
+		return err
+	}
+	return hc.Watch()
+}
+
 func (hc *HSyncClient) Connect() error {
-	hc.connectTryTimes++
-	glog.Infoln("connect to", hc.remoteHost.Host, "tryTimes:", hc.connectTryTimes)
+	num := hc.connectTryTimes.Add(1)
+	glog.Infoln("connect to", hc.remoteHost.Host, "tryTimes:", num)
 	client, err := RpcDialHTTPPath("tcp", hc.remoteHost.Host, rpc.DefaultRPCPath, 2*time.Second)
 	if err != nil {
 		glog.Warningln("connect err", err)
@@ -107,7 +120,7 @@ func (hc *HSyncClient) Connect() error {
 	}
 
 	glog.Infoln("connect to", hc.remoteHost.Host, "success")
-	hc.connectTryTimes = 0
+	hc.connectTryTimes.Store(0)
 	hc.client = client
 
 	rv := strings.Split(hc.RemoteVersion(), " ")
@@ -418,7 +431,8 @@ func (hc *HSyncClient) Watch() (err error) {
 }
 
 func (hc *HSyncClient) addWatch(dir string) {
-	filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	start := time.Now()
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			glog.Warningf("walk %q with error  %v and skipped", dir, err)
 			return nil
@@ -439,10 +453,12 @@ func (hc *HSyncClient) addWatch(dir string) {
 		glog.Infoln("add watch,path=[", relPath, "]", err)
 		return err
 	})
+	cost := time.Since(start)
+	glog.Infoln("addWatch", dir, "finished, cost=", cost.String(), "err=", err)
 }
 
 func (hc *HSyncClient) addEvent(fileName string, eventType EventType, nameTo string) {
-	hc.clientEvents = append(hc.clientEvents, &ClientEvent{Name: fileName, EventType: eventType, NameTo: nameTo})
+	hc.events = append(hc.events, &ClientEvent{Name: fileName, EventType: eventType, NameTo: nameTo})
 }
 
 var clientThreadNumber int
@@ -459,7 +475,7 @@ func (hc *HSyncClient) eventLoop() {
 	checkChan := make(chan bool, clientThreadNumber)
 
 	eventHandler := func() {
-		n := len(hc.clientEvents)
+		n := len(hc.events)
 		glog.V(2).Info("event buffer length:", n)
 		fmt.Print(n)
 		if n == 0 {
@@ -467,12 +483,12 @@ func (hc *HSyncClient) eventLoop() {
 		}
 
 		hc.mu.Lock()
-		events := make([]*ClientEvent, len(hc.clientEvents))
+		events := make([]*ClientEvent, len(hc.events))
 
-		copy(events, hc.clientEvents)
+		copy(events, hc.events)
 		// @todo 需要处理一个文件，同时多种事件的情况，比如先删除再立马创建
 		// 要保证处理的是有时序的
-		hc.clientEvents = make([]*ClientEvent, 0)
+		hc.events = make([]*ClientEvent, 0)
 		hc.mu.Unlock()
 
 		eventCache := make(map[string]time.Time)

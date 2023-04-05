@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/fsgo/fsconf"
 	"github.com/golang/glog"
 )
 
@@ -18,53 +19,55 @@ type ServerConf struct {
 	DeployCmd string `json:"deployCmd"`
 }
 
+func (cfg *ServerConf) AutoCheck() error {
+	if cfg.Addr == "" {
+		return errors.New("server listen addr is empty")
+	}
+
+	for _, deploy := range cfg.Deploy {
+		deploy.From = strings.Trim(deploy.From, "/")
+	}
+
+	return nil
+}
+
+var _ fsconf.AutoChecker = (*ServerConf)(nil)
+
 type ServerConfDeploy struct {
 	From  string `json:"from"`
 	To    string `json:"to"`
 	IsDir bool
 }
 
-func LoadServerConf(name string) (conf *ServerConf, err error) {
-	err = loadJSONFile(name, &conf)
-
-	if err == nil {
-		conf.ConfDir, err = filepath.Abs(name)
-		conf.ConfDir = filepath.Dir(conf.ConfDir)
-		if !filepath.IsAbs(conf.Home) {
-			conf.Home = filepath.Join(conf.ConfDir, conf.Home)
-		}
-		conf.Home = filepath.Clean(conf.Home)
-		conf.DeployCmd = strings.TrimSpace(strings.ReplaceAll(conf.DeployCmd, "{pwd}", conf.ConfDir))
-		conf.init()
-	}
-	if err == nil {
-		if conf.Addr == "" {
-			err = errors.New("server listen addr is empty")
-		}
-	}
+func LoadServerConf(name string) (cfg *ServerConf, err error) {
+	fp, err := filepath.Abs(name)
 	if err != nil {
-		glog.Warningln("load conf [", name, "]failed,err:", err)
-	} else {
-		glog.V(2).Info("load conf [", name, "]suc,", conf)
+		return nil, err
 	}
+	err = fsconf.Parse(fp, &cfg)
+	if err != nil {
+		return nil, err
+	}
+	cfg.ConfDir = filepath.Dir(fp)
 
-	return
+	if !filepath.IsAbs(cfg.Home) {
+		cfg.Home = filepath.Join(cfg.ConfDir, cfg.Home)
+	}
+	cfg.Home = filepath.Clean(cfg.Home)
+	cfg.DeployCmd = strings.TrimSpace(strings.ReplaceAll(cfg.DeployCmd, "{pwd}", cfg.ConfDir))
+	glog.V(2).Info("load cfg [", name, "]suc,", cfg)
+
+	return cfg, nil
 }
 
-func (conf *ServerConf) String() string {
-	data, _ := json.MarshalIndent(conf, "", "    ")
+func (cfg *ServerConf) String() string {
+	data, _ := json.MarshalIndent(cfg, "", "    ")
 	return string(data)
 }
 
-func (conf *ServerConf) init() {
-	for _, deploy := range conf.Deploy {
-		deploy.From = strings.Trim(deploy.From, "/")
-	}
-}
-
-func (conf *ServerConf) getDeployTo(relName string) []string {
-	deployTo := []string{}
-	for _, deploy := range conf.Deploy {
+func (cfg *ServerConf) getDeployTo(relName string) []string {
+	var deployTo []string
+	for _, deploy := range cfg.Deploy {
 		if deploy.From != "." && !strings.HasPrefix(relName, deploy.From) {
 			continue
 		}
@@ -79,7 +82,7 @@ func (conf *ServerConf) getDeployTo(relName string) []string {
 	return deployTo
 }
 
-var ConfDemoServer string = `
+var ConfDemoServer = `
 {
     "addr":":8700",
     "home":"./",

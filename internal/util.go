@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"crypto/md5"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"net"
@@ -14,7 +13,6 @@ import (
 	"net/rpc"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -159,22 +157,4 @@ func dataGzipDecode(data []byte) (out []byte) {
 	gr, _ := gzip.NewReader(bytes.NewBuffer(data))
 	bs, _ := io.ReadAll(gr)
 	return bs
-}
-
-// loadJsonFile load json
-func loadJSONFile(jsonPath string, val any) error {
-	bs, err := os.ReadFile(jsonPath)
-	if err != nil {
-		return err
-	}
-	lines := strings.Split(string(bs), "\n")
-	var bf bytes.Buffer
-	for _, line := range lines {
-		lineNew := strings.TrimSpace(line)
-		if (len(lineNew) > 0 && lineNew[0] == '#') || (len(lineNew) > 1 && lineNew[0:2] == "//") {
-			continue
-		}
-		bf.WriteString(lineNew)
-	}
-	return json.Unmarshal(bf.Bytes(), &val)
 }

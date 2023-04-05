@@ -4,15 +4,16 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/golang/glog"
 
 	hsync "github.com/hidu/hsync/internal"
 )
 
-var d = flag.Bool("d", false, "run as daemon server, default is client")
-var host = flag.String("h", "", "sync host name")
-var ve = flag.Bool("version", false, "show version:"+hsync.GetVersion())
+var asDaemon = flag.Bool("d", false, "run as daemon server, default is client")
+var hostName = flag.String("h", "", "host name in client config file, default is the first")
+var showVersion = flag.Bool("version", false, "show version:"+hsync.GetVersion())
 var demoConf = flag.String("demo_conf", "", "show default conf [client|server]")
 var deployOnly = flag.Bool("deploy", false, "deploy all files for server")
 
@@ -30,52 +31,66 @@ func init() {
 }
 
 func main() {
+	parserFlags()
+	confName := getConfName()
+
+	if *asDaemon {
+		startServer(confName)
+	} else {
+		startClient(confName)
+	}
+}
+
+func parserFlags() {
 	flag.Parse()
-	if *ve {
+	if *showVersion {
 		fmt.Fprintln(os.Stderr, "version:", hsync.GetVersion())
 		os.Exit(0)
 	}
+
 	if *demoConf != "" {
 		fmt.Println(hsync.DemoConf(*demoConf))
 		os.Exit(0)
 	}
-
 	if *deployOnly {
-		*d = true
+		*asDaemon = true
+	}
+}
+
+func startServer(confName string) {
+	server, err := hsync.NewHSyncServer(confName)
+	if err != nil {
+		glog.Exitln("start server failed:", err)
 	}
 
+	if *deployOnly {
+		server.DeployAll()
+		return
+	}
+	glog.Exitln("server exit:", server.Start())
+}
+
+func startClient(confName string) {
+	client, err := hsync.NewHSyncClient(confName, *hostName)
+	if err != nil {
+		glog.Exitln("start hsync client failed:", err)
+	}
+	glog.Exitln("client exit:", client.Start())
+}
+
+func getConfName() string {
 	confName := flag.Arg(0)
 	if confName == "" {
-		if *d {
+		if *asDaemon {
 			confName = "hsyncd.json"
 		} else {
 			confName = "hsync.json"
 		}
 	}
 
-	confInfo, err := os.Stat(confName)
-	if err != nil || confInfo.IsDir() {
+	name, err := filepath.Abs(confName)
+	if err != nil {
 		glog.Exitf("hsync conf [%s] not exists!", confName)
 	}
-
-	if *d {
-		server, err := hsync.NewHSyncServer(confName)
-		if err != nil {
-			glog.Exitln("start server failed:", err)
-		}
-
-		if *deployOnly {
-			server.DeployAll()
-			return
-		}
-
-		server.Start()
-	} else {
-		client, err := hsync.NewHSyncClient(confName, *host)
-		if err != nil {
-			glog.Exitln("start hsync client failed:", err)
-		}
-		client.Connect()
-		client.Watch()
-	}
+	return name
 }
