@@ -350,7 +350,7 @@ remoteCheck:
 
 	remoteStat, err := hc.RemoteGetStat(absPath)
 	if err != nil {
-		glog.Warningln("[", id, "] sync getstat failed", err)
+		glog.Warningln("[", id, "] sync get stat failed", err)
 		return
 	}
 
