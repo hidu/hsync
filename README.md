@@ -25,7 +25,7 @@ go install github.com/hidu/hsync@latest
     "home":"./",
     "token":"abc",
     "deploy":[
-        {"from":"a/","to":"d/"}，
+        {"from":"a/","to":"d/"},
         {"from":"phpsrc/","to":"/home/work/app/phpsrc/"}
     ],
      "deployCmd":""

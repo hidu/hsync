@@ -68,10 +68,11 @@ func (cfg *ServerConf) String() string {
 func (cfg *ServerConf) getDeployTo(relName string) []string {
 	var deployTo []string
 	for _, deploy := range cfg.Deploy {
-		if deploy.From != "." && !strings.HasPrefix(relName, deploy.From) {
+		from := strings.TrimLeft(deploy.From, "/")
+		if deploy.From != "." && !strings.HasPrefix(relName, from) {
 			continue
 		}
-		rel, err := filepath.Rel(deploy.From, relName)
+		rel, err := filepath.Rel(from, relName)
 		if err != nil {
 			glog.Warningln("deploy wrong path,relName:", relName, "deploy:", deploy)
 			continue
