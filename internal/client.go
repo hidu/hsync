@@ -476,11 +476,12 @@ func (hc *HSyncClient) eventLoop() {
 
 	eventHandler := func() {
 		n := len(hc.events)
-		glog.V(2).Info("event buffer length:", n)
-		fmt.Print(n)
+		glog.V(3).Info("event buffer length:", n)
 		if n == 0 {
+			fmt.Print(n)
 			return
 		}
+		fmt.Println(n)
 
 		hc.mu.Lock()
 		events := make([]*ClientEvent, len(hc.events))

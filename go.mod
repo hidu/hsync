@@ -1,6 +1,6 @@
 module github.com/hidu/hsync
 
-go 1.20
+go 1.21
 
 require (
 	github.com/fsgo/fsconf v0.2.11

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"math"
 	"os"
 	"path/filepath"
@@ -388,11 +389,18 @@ func (trans *Trans) DirList(arg *RpcArgs, result *DirList) (err error) {
 	return err
 }
 
+func (trans *Trans) copyEvents() map[string]EventType {
+	trans.mu.Lock()
+	defer trans.mu.Unlock()
+	cp := maps.Clone(trans.events)
+	clear(trans.events)
+	return cp
+}
+
 func (trans *Trans) eventLoop() {
-	events := make(map[string]EventType)
 	dealEvent := func(relName string, et EventType) {
 		deployTo := trans.server.conf.getDeployTo(relName)
-		glog.V(2).Infoln("trans.eventLoop deploy", relName, "-->", deployTo)
+		glog.Infoln("trans.eventLoop deploy", relName, "-->", deployTo)
 		if len(deployTo) > 0 {
 			if et == EventUpdate {
 				for _, to := range deployTo {
@@ -405,31 +413,25 @@ func (trans *Trans) eventLoop() {
 		}
 	}
 	eventHandler := func() {
-		glog.V(2).Info("trans.eventLoop event buffer length:", len(trans.events))
-		if len(trans.events) == 0 {
-			return
-		}
-		trans.mu.Lock()
-		for k, v := range trans.events {
-			events[k] = v
-			delete(trans.events, k)
-		}
-		trans.mu.Unlock()
+		events := trans.copyEvents()
+		fmt.Print(len(events))
+		glog.V(2).Info("trans.eventLoop event buffer length:", len(events))
 		if len(events) == 0 {
 			return
 		}
 		for fileName, v := range events {
 			dealEvent(fileName, v)
-			delete(events, fileName)
 		}
 	}
 
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+	tm := time.NewTimer(time.Second / 2)
+	defer tm.Stop()
 
-	for range ticker.C {
+	for range tm.C {
 		eventHandler()
+		tm.Reset(time.Second)
 	}
+
 	glog.Error("trans.eventLoop exit")
 }
 
