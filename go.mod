@@ -5,7 +5,7 @@ go 1.22.0
 require (
 	github.com/fsgo/fsconf v0.2.11
 	github.com/fsnotify/fsnotify v1.6.0
-	github.com/golang/glog v1.1.2
+	github.com/golang/glog v1.2.4
 	github.com/stretchr/testify v1.8.4
 )
 
